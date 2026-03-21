@@ -112,7 +112,7 @@ export default function StudentList() {
               return (
                 <NeonCard
                   key={student.number}
-                  onClick={() => navigation.navigate('StudentProfile')}
+                  onClick={() => navigation.navigate('StudentTabs', { screen: 'StudentProfile' })}
                   style={!student.active ? styles.inactiveCard : undefined}
                 >
                   <View style={styles.studentRow}>

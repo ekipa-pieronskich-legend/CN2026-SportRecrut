@@ -147,7 +147,7 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={styles.outlineButton}
               activeOpacity={0.8}
-              onPress={() => navigation.navigate('StudentDashboard')}
+              onPress={() => navigation.navigate('StudentTabs', { screen: 'StudentDashboard' })}
             >
               <Text style={styles.outlineButtonText}>Jestem Uczniem</Text>
             </TouchableOpacity>

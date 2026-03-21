@@ -11,14 +11,19 @@ import {
   Modal,
 } from 'react-native';
 import { Camera, ArrowRight, CheckCircle, Plus, Trash2, X } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { MaterialTopTabNavigationProp } from '@react-navigation/material-top-tabs';
 import { NeonCard } from '../components/NeonCard';
 import { NeonIcon } from '../components/NeonIcon';
-import { BottomNav } from '../components/BottomNav';
 import { AnomalyModal } from '../components/AnomalyModal';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
-import type { RootStackParamList } from '../routes';
+import type { RootStackParamList, StudentTabParamList } from '../routes';
+
+type TestFormNavProp = CompositeNavigationProp<
+  MaterialTopTabNavigationProp<StudentTabParamList, 'TestForm'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 const EXERCISES = [
   { id: 'plank', name: 'Plank', emoji: '🧘', unit: 's', type: 'single', average: 90, scoring: 'higher' },
@@ -131,7 +136,7 @@ function ProgressBar({ percent, forceTrigger }: { percent: number, forceTrigger:
 }
 
 export default function TestForm() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<TestFormNavProp>();
   const [activeExercises, setActiveExercises] = useState<ActiveExercise[]>([]);
   const [photoAdded, setPhotoAdded] = useState(false);
   const [showAnomalyModal, setShowAnomalyModal] = useState(false);
@@ -430,8 +435,6 @@ export default function TestForm() {
           </View>
         </View>
       </ScrollView>
-
-      <BottomNav type="student" />
       <AnomalyModal
         isOpen={showAnomalyModal}
         onClose={() => setShowAnomalyModal(false)}

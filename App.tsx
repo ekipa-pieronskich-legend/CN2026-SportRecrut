@@ -2,7 +2,9 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import type { RootStackParamList } from './src/features/routes';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import type { RootStackParamList, StudentTabParamList } from './src/features/routes';
+import { BottomNav } from './src/features/components/BottomNav';
 
 import LoginScreen from './src/features/screens/LoginScreen';
 import StudentDashboard from './src/features/screens/StudentDashboard';
@@ -28,6 +30,28 @@ import HeatMapScreen from './src/features/screens/HeatMapScreen';
  */
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createMaterialTopTabNavigator<StudentTabParamList>();
+
+function StudentTabNavigator() {
+  return (
+    <Tab.Navigator
+      initialRouteName="StudentDashboard"
+      tabBarPosition="bottom"
+      tabBar={(props) => <BottomNav {...props} type="student" />}
+      screenOptions={{
+        swipeEnabled: true,
+        animationEnabled: true,
+        lazy: true,
+      }}
+    >
+      <Tab.Screen name="StudentDashboard" component={StudentDashboard} />
+      <Tab.Screen name="TestForm" component={TestForm} />
+      <Tab.Screen name="StudentProfile" component={StudentProfile} />
+      <Tab.Screen name="RankingScreen" component={RankingScreen} />
+      <Tab.Screen name="HeatMapScreen" component={HeatMapScreen} />
+    </Tab.Navigator>
+  );
+}
 
 export default function App() {
   return (
@@ -39,19 +63,17 @@ export default function App() {
           headerShown: false,
           contentStyle: { backgroundColor: '#0A0E1A' },
           animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
         }}
       >
         <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="StudentDashboard" component={StudentDashboard} />
-        <Stack.Screen name="StudentProfile" component={StudentProfile} />
-        <Stack.Screen name="TestForm" component={TestForm} />
+        <Stack.Screen name="StudentTabs" component={StudentTabNavigator} />
         <Stack.Screen name="StreakScreen" component={StreakScreen} />
-        <Stack.Screen name="RankingScreen" component={RankingScreen} />
         <Stack.Screen name="TeacherDashboard" component={TeacherDashboard} />
         <Stack.Screen name="StudentList" component={StudentList} />
         <Stack.Screen name="TeamRecruitment" component={TeamRecruitment} />
         <Stack.Screen name="ReportExport" component={ReportExport} />
-        <Stack.Screen name="HeatMapScreen" component={HeatMapScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
