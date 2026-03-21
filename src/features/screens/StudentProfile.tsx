@@ -341,7 +341,7 @@ export default function StudentProfile() {
             {statsArray.map((stat, idx) => {
               const isBest = stat.value === maxStat;
               const isWorst = stat.value === minStat;
-              return (
+              return ( 
                 <View 
                   key={stat.label + idx} 
                   style={[
