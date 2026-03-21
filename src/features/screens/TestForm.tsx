@@ -26,6 +26,8 @@ type TestFormNavProp = CompositeNavigationProp<
   MaterialTopTabNavigationProp<StudentTabParamList, 'TestForm'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
+import { checkAnomaly } from '../utils/anomalyUtils';
+import { MOCK_STUDENTS } from '../data/MockStudents';
 
 const EXERCISES = [
   { id: 'plank', name: 'Plank', emoji: '🧘', unit: 's', type: 'single', average: 90, scoring: 'higher' },
