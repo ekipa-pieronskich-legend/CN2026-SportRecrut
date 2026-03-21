@@ -33,7 +33,6 @@ type TestFormNavProp = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 
-
 const EXERCISES = [
   { id: 'plank', name: 'Plank', emoji: '🧘', unit: 's', type: 'single', average: 90, scoring: 'higher' },
   { id: 'run100', name: 'Bieg 100m', emoji: '🏃', unit: 's', type: 'single', average: 15.2, scoring: 'lower' },
