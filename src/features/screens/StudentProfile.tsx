@@ -337,33 +337,33 @@ Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
           <style>
             :root {
-              --bg-dark: #0B0E14;
-              --card-bg: #151A22;
-              --neon-green: #00FF66;
-              --neon-glow: rgba(0, 255, 102, 0.4);
-              --text-main: #FFFFFF;
-              --text-muted: #A0AABF;
+              --bg-light: #FFFFFF;
+              --card-bg: #F8FAFC;
+              --border-color: #E2E8F0;
+              --brand-green: #059669;
+              --brand-glow: rgba(5, 150, 105, 0.15);
+              --text-main: #0F172A;
+              --text-muted: #475569;
             }
             body { 
               font-family: 'Inter', sans-serif; 
-              background-color: var(--bg-dark); 
+              background-color: var(--bg-light); 
               color: var(--text-main); 
               margin: 0; 
               padding: 0; 
               display: flex;
               justify-content: center;
-              background-image: radial-gradient(circle at 100% 0%, #1a2a22 0%, transparent 50%),
-                                radial-gradient(circle at 0% 100%, #15222e 0%, transparent 50%);
+              background-image: none;
             }
             .a4-page { 
               width: 100%; max-width: 800px;
               min-height: 1050px;
               padding: 50px; 
               position: relative;
-              background: rgba(11, 14, 20, 0.95);
-              border: 1px solid #1f2937;
-              border-radius: 16px;
-              box-shadow: 0 0 40px rgba(0,0,0,0.5);
+              background: #FFFFFF;
+              border: 1px solid var(--border-color);
+              border-radius: 12px;
+              box-shadow: 0 10px 40px rgba(0,0,0,0.05);
               overflow: hidden;
               margin: 20px auto;
             }
@@ -373,7 +373,7 @@ Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
               transform: translate(-50%, -50%) rotate(-30deg);
               font-size: 140px;
               font-weight: 900;
-              color: rgba(255,255,255,0.02);
+              color: rgba(0,0,0,0.02);
               white-space: nowrap;
               pointer-events: none;
               text-transform: uppercase;
@@ -383,13 +383,13 @@ Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
               display: flex;
               justify-content: space-between;
               align-items: center;
-              border-bottom: 2px solid #1f2937; 
+              border-bottom: 2px solid var(--border-color); 
               padding-bottom: 20px; 
               margin-bottom: 40px; 
             }
-            .header h1 { margin: 0; color: var(--neon-green); font-size: 38px; text-transform: uppercase; letter-spacing: 3px; font-weight: 900; text-shadow: 0 0 10px var(--neon-glow); }
-            .header p { color: var(--text-muted); font-size: 15px; font-weight: 500; text-transform: uppercase; margin: 5px 0 0; letter-spacing: 2px; }
-            .section-title { font-size: 20px; color: var(--text-main); margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px; display: inline-block; padding-bottom: 5px; border-bottom: 2px solid var(--neon-green); font-weight: 800; }
+            .header h1 { margin: 0; color: var(--brand-green); font-size: 38px; text-transform: uppercase; letter-spacing: 3px; font-weight: 900; }
+            .header p { color: var(--text-muted); font-size: 15px; font-weight: 600; text-transform: uppercase; margin: 5px 0 0; letter-spacing: 2px; }
+            .section-title { font-size: 20px; color: var(--text-main); margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px; display: inline-block; padding-bottom: 5px; border-bottom: 2px solid var(--brand-green); font-weight: 800; }
             
             .row { display: flex; gap: 30px; margin-bottom: 40px; }
             .col { flex: 1; }
@@ -398,24 +398,24 @@ Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
               background: var(--card-bg);
               padding: 25px;
               border-radius: 12px;
-              border: 1px solid #1f2937;
+              border: 1px solid var(--border-color);
               display: grid;
               grid-template-columns: 1fr 1fr;
               gap: 20px;
             }
             .info-item { display: flex; flex-direction: column; }
-            .info-label { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
-            .info-value { font-size: 20px; color: var(--text-main); font-weight: 700; }
+            .info-label { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+            .info-value { font-size: 20px; color: var(--text-main); font-weight: 800; }
             
             .overall-badge {
               text-align: center;
-              background: linear-gradient(145deg, #151A22, #0B0E14);
-              border: 1px solid #1f2937;
+              background: #FFFFFF;
+              border: 1px solid var(--border-color);
               border-radius: 50%;
               width: 180px; height: 180px;
               display: flex; flex-direction: column; align-items: center; justify-content: center;
               margin: 0 auto;
-              box-shadow: 0 0 30px var(--neon-glow), inset 0 0 20px rgba(0,0,0,0.5);
+              box-shadow: 0 10px 30px var(--brand-glow), inset 0 0 20px rgba(0,0,0,0.02);
               position: relative;
             }
             .overall-badge::before {
@@ -423,24 +423,25 @@ Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
               position: absolute;
               top: -5px; left: -5px; right: -5px; bottom: -5px;
               border-radius: 50%;
-              background: conic-gradient(var(--neon-green) ${dynamicOverall}%, transparent 0);
+              background: conic-gradient(var(--brand-green) ${dynamicOverall}%, #E2E8F0 0);
               z-index: 1;
             }
             .overall-badge-inner {
               position: relative;
-              background: var(--card-bg);
+              background: #FFFFFF;
               width: 100%; height: 100%;
               border-radius: 50%;
               z-index: 2;
               display: flex; flex-direction: column; align-items: center; justify-content: center;
+              box-shadow: 0 4px 10px rgba(0,0,0,0.05);
             }
-            .overall-value { font-size: 58px; font-weight: 900; color: var(--neon-green); text-shadow: 0 0 15px var(--neon-glow); line-height: 1; }
-            .overall-label { font-size: 14px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); margin-top: 5px; font-weight: 600; }
+            .overall-value { font-size: 58px; font-weight: 900; color: var(--brand-green); line-height: 1; }
+            .overall-label { font-size: 14px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); margin-top: 5px; font-weight: 700; }
             
             .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 40px; }
             .stat-box {
               background: var(--card-bg);
-              border: 1px solid #1f2937;
+              border: 1px solid var(--border-color);
               border-radius: 12px;
               padding: 20px 10px;
               text-align: center;
@@ -449,15 +450,15 @@ Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
               overflow: hidden;
             }
             .stat-bar-bg {
-              width: 100%; height: 6px; background: #1f2937; border-radius: 3px; margin-top: 15px; position: relative;
+              width: 100%; height: 6px; background: var(--border-color); border-radius: 3px; margin-top: 15px; position: relative;
             }
             .stat-bar-fill {
-              position: absolute; top: 0; left: 0; height: 100%; background: var(--neon-green); border-radius: 3px; box-shadow: 0 0 8px var(--neon-glow);
+              position: absolute; top: 0; left: 0; height: 100%; background: var(--brand-green); border-radius: 3px;
             }
             .stat-val { font-size: 30px; font-weight: 800; color: var(--text-main); margin-bottom: 5px; }
-            .stat-name { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+            .stat-name { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 
-            .footer { text-align: center; margin-top: 60px; padding-top: 20px; border-top: 1px solid #1f2937; color: #7F8B9E; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+            .footer { text-align: center; margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border-color); color: var(--text-muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
           </style>
         </head>
         <body>

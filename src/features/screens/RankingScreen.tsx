@@ -1,33 +1,35 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, RefreshControl, Modal } from 'react-native';
 import { Medal, TrendingUp, TrendingDown, Flame } from 'lucide-react-native';
 import { NeonCard } from '../components/NeonCard';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import { MOCK_STUDENTS } from '../data/MockStudents';
-import { useNavigation } from '@react-navigation/native';
+import StudentProfile from './StudentProfile';
 
 export default function RankingScreen() {
-  const navigation = useNavigation<any>();
   const [activeTab, setActiveTab] = useState<'week' | 'month' | 'all'>('week');
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1000);
   }, []);
 
-  const rankings = [
-    { rank: 1, name: 'Jakub Kowalski', class: '6A', score: 92, streak: 12, trend: 'up' },
-    { rank: 2, name: 'Anna Nowak', class: '6B', score: 89, streak: 8, trend: 'up' },
-    { rank: 3, name: 'Michał Wiśniewski', class: '6A', score: 87, streak: 15, trend: 'same' },
-    { rank: 4, name: 'Zofia Lewandowska', class: '6C', score: 85, streak: 5, trend: 'down' },
-    { rank: 5, name: 'Kacper Zieliński', class: '6B', score: 83, streak: 10, trend: 'up' },
-    { rank: 6, name: 'Julia Kamińska', class: '6A', score: 81, streak: 3, trend: 'same' },
-    { rank: 7, name: 'Filip Dąbrowski', class: '6C', score: 79, streak: 7, trend: 'up' },
-    { rank: 8, name: 'Maja Piotrowska', class: '6B', score: 77, streak: 2, trend: 'down' },
-    { rank: 9, name: 'Adam Kowalczyk', class: '6A', score: 75, streak: 9, trend: 'up' },
-    { rank: 10, name: 'Oliwia Szymańska', class: '6C', score: 73, streak: 4, trend: 'same' },
-  ];
+  const rankings = MOCK_STUDENTS
+    .slice()
+    .sort((a, b) => b.overall - a.overall)
+    .slice(0, 10)
+    .map((s, index) => ({
+      rank: index + 1,
+      name: s.name,
+      class: s.class,
+      score: s.overall,
+      streak: s.currentStreak,
+      trend: index % 4 === 0 ? 'down' : (index % 2 === 0 ? 'up' : 'same'),
+      id: s.id,
+      avatar: s.avatar
+    }));
 
   const getMedalColor = (rank: number) => {
     if (rank === 1) return '#FFD700';
@@ -83,11 +85,7 @@ export default function RankingScreen() {
                 <TouchableOpacity
                   key={player.rank}
                   activeOpacity={0.8}
-                  onPress={() => {
-                    if (matchingStudent?.id) {
-                      navigation.navigate('StudentProfile', { studentId: matchingStudent.id });
-                    }
-                  }}
+                  onPress={() => setSelectedStudentId(player.id)}
                 >
                   <NeonCard
                     glow={isFirst}
@@ -178,6 +176,21 @@ export default function RankingScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Slide-up Profile Modal */}
+      <Modal
+        visible={!!selectedStudentId}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSelectedStudentId(null)}
+      >
+        {selectedStudentId && (
+          <StudentProfile 
+            studentId={selectedStudentId} 
+            onClose={() => setSelectedStudentId(null)} 
+          />
+        )}
+      </Modal>
     </View>
   );
 }
