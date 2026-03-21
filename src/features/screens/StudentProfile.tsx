@@ -17,7 +17,7 @@ import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 // COMPONENTS & UTILS FROM MASTER
 import { AchievementsBoard } from '../components/AchievementsBoard';
 import { ExerciseRanksCard } from '../components/ExerciseRanksCard';
-import { calculateExerciseRanks, calculateAverageRankId } from '../utils/rankCalculator';
+import { calculateExerciseRanks, calculateAverageRankId, calculateDynamicStats } from '../utils/rankCalculator';
 
 interface StudentProfileProps {
   route?: any;
@@ -302,20 +302,7 @@ Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
 
   const bmiColor = getBMITheme(student.weight || 0, student.height || 0);
 
-  const getStat = (exerciseIds: string[]) => {
-    const ranks = exerciseRanks.filter(r => exerciseIds.includes(r.exerciseId) && r.bestValue > 0);
-    if (ranks.length === 0) return 60; // Default
-    const avgPercent = ranks.reduce((sum, r) => sum + r.percent, 0) / ranks.length;
-    return Math.min(100, Math.round(avgPercent));
-  };
-
-  const speed = getStat(['run100']);
-  const strength = getStat(['pushups', 'pullups', 'bench', 'squats', 'deadlift']);
-  const stamina = getStat(['run1000', 'plank']);
-  const jump = getStat(['jump']);
-  const agility = getStat(['situps']);
-
-  const dynamicOverall = Math.round((speed + strength + stamina + jump + agility) / 5);
+  const { dynamicOverall, speed, strength, stamina, jump, agility } = calculateDynamicStats(student);
 
   const radarData = [
     { attribute: 'Szybkość', value: speed },

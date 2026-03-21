@@ -14,6 +14,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
 import { EXERCISES } from '../config/exercises';
+import { calculateDynamicStats } from '../utils/rankCalculator';
 
 export default function ReportExport() {
   const [isLoading, setIsLoading] = useState(true);
@@ -74,9 +75,10 @@ export default function ReportExport() {
           count++;
           loadedStudents.push(data);
 
-          // Pobieramy wynik z bezpiecznym fallbackiem
-          const score = data.overall ?? data.stats?.overall ?? 0;
-          scoreSum += score;
+          // Pobieramy wynik z bezpiecznym fallbackiem z nowego wspólnego silnika
+          const { dynamicOverall } = calculateDynamicStats(data);
+          scoreSum += dynamicOverall;
+          data.overall = dynamicOverall; // Zapisujemy by PDF nie zczytał surowego 60.
 
           // Liczymy aktywne streaki
           const currentStreak = data.currentStreak ?? 0;

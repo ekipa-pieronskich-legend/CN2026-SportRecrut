@@ -91,3 +91,55 @@ export const calculateAverageRankId = (exerciseRanks: ExerciseRankResult[]): num
   const avg = withResults.reduce((sum, r) => sum + r.rankId, 0) / withResults.length;
   return Math.round(avg);
 };
+
+export const calculateDynamicStats = (student: any): {
+  dynamicOverall: number;
+  speed: number;
+  strength: number;
+  stamina: number;
+  jump: number;
+  agility: number;
+} => {
+  const bestResults: Record<string, number> = {};
+  if (student?.testResults?.length > 0) {
+    student.testResults.forEach((test: any) => {
+      // Stary format wstecznie kompatybilny
+      if (test.plank) bestResults['plank'] = test.plank;
+      if (test.sprint) bestResults['run100'] = test.sprint;
+      if (test.longJump) bestResults['jump'] = test.longJump;
+
+      // Nowy format TestForm
+      if (test.exercises && Array.isArray(test.exercises)) {
+        test.exercises.forEach((ex: any) => {
+          if (ex.exerciseId && typeof ex.bestValue === 'number') {
+            bestResults[ex.exerciseId] = ex.bestValue;
+          }
+        });
+      }
+    });
+  }
+  
+  const exerciseRanks = calculateExerciseRanks(bestResults);
+
+  const getStat = (exerciseIds: string[]) => {
+    const ranks = exerciseRanks.filter(r => exerciseIds.includes(r.exerciseId) && r.bestValue > 0);
+    if (ranks.length === 0) return 60; // Default
+    const avgPercent = ranks.reduce((sum, r) => sum + r.percent, 0) / ranks.length;
+    return Math.min(100, Math.round(avgPercent));
+  };
+
+  const speed = getStat(['run100']);
+  const strength = getStat(['pushups', 'pullups', 'bench', 'squats', 'deadlift']);
+  const stamina = getStat(['run1000', 'plank']);
+  const jump = getStat(['jump']);
+  const agility = getStat(['situps']);
+
+  return {
+    speed,
+    strength,
+    stamina,
+    jump,
+    agility,
+    dynamicOverall: Math.round((speed + strength + stamina + jump + agility) / 5)
+  };
+};
