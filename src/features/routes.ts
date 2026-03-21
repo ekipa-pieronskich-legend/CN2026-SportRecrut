@@ -9,4 +9,5 @@ export type RootStackParamList = {
   StudentList: undefined;
   TeamRecruitment: undefined;
   ReportExport: undefined;
+  HeatMapScreen: undefined;
 };
