@@ -6,6 +6,7 @@ import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import { MOCK_STUDENTS } from '../data/MockStudents';
 import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
+import { calculateDynamicStats } from '../utils/rankCalculator';
 import StudentProfile from './StudentProfile';
 
 export default function RankingScreen() {
@@ -46,11 +47,8 @@ export default function RankingScreen() {
 
       const sorted = studentsInSchool
         .map(student => {
-          let score = student.overall;
-          if (!score && student.stats) {
-            score = Math.round(((student.stats.speed||0) + (student.stats.strength||0) + (student.stats.stamina||0) + (student.stats.jump||0) + (student.stats.agility||0)) / 5);
-          }
-          return { ...student, score: score || 0 };
+          const { dynamicOverall } = calculateDynamicStats(student);
+          return { ...student, score: dynamicOverall };
         })
         .sort((a, b) => b.score - a.score)
         .map((s, index) => ({
