@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated, Alert, Modal, TextInput, Dimensions, Image, RefreshControl, ActivityIndicator } from 'react-native';
-import { Download, Flame, CheckCircle, XCircle, ArrowLeft, Settings, X } from 'lucide-react-native';
+import { Download, Flame, CheckCircle, XCircle, ArrowLeft, Settings, X, Sparkles } from 'lucide-react-native';
 import { NeonCard } from '../components/NeonCard';
 import { NeonIcon } from '../components/NeonIcon';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
@@ -90,6 +90,9 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isEditModalVisible, setEditModalVisible] = useState(false);
+  const [isAiModalVisible, setAiModalVisible] = useState(false);
+  const [isAiLoading, setAiLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState('');
 
   const [editForm, setEditForm] = useState({ weight: '', height: '', age: '' });
 
@@ -100,7 +103,10 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
   const fetchStudentData = async () => {
     try {
       const targetUid = studentId || auth.currentUser?.uid;
-      if (!targetUid) return;
+      if (!targetUid) {
+        setIsLoading(false);
+        return;
+      }
 
       const docRef = doc(db, 'students', targetUid);
       const docSnap = await getDoc(docRef);
@@ -159,8 +165,79 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
     } catch (e) { Alert.alert('Błąd zapisu'); }
   };
 
-  if (isLoading || !student) {
-    return <View style={[styles.container, { justifyContent: 'center' }]}><ActivityIndicator size="large" color={Colors.neonGreen} /></View>;
+  const fetchAiSummary = async () => {
+    try {
+      setAiLoading(true);
+      setAiSummary('');
+      setAiModalVisible(true);
+
+      const prompt = `Jesteś bezwzględnym skautem sportowym. Przeanalizuj tego zawodnika chłodno i analitycznie.
+
+DANE ZAWODNIKA:
+- Imię: ${student?.name || 'Nieznany'}
+- Wiek: ${student?.age || '-'} lat
+- Waga: ${student?.weight || '-'} kg
+- Wzrost: ${student?.height || '-'} cm
+- Ocena ogólna: ${student?.overall || 60}/100
+- Szybkość: ${student?.stats?.speed || 60}/100
+- Siła: ${student?.stats?.strength || 60}/100
+- Wytrzymałość: ${student?.stats?.stamina || 60}/100
+- Skoczność: ${student?.stats?.jump || 60}/100
+- Zwinność: ${student?.stats?.agility || 60}/100
+
+Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
+1. OCENA OGÓLNA – krótka, brutalna ocena poziomu zawodnika.
+2. KADRA – Czy nadaje się do kadry szkolnej? Tak/Nie i dlaczego.
+3. SUFIT MOŻLIWOŚCI – Jaki jest jego potencjał rozwojowy i czy warto w niego inwestować.
+4. REKOMENDACJA TRENINGOWA – Co konkretnie musi poprawić, żeby awansować.`;
+
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer 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',
+        },
+        body: JSON.stringify({
+          model: 'openrouter/auto',
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+
+      if (text) {
+        const clean = text.replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1').replace(/^#{1,4}\s*/gm, '').replace(/`/g, '');
+        setAiSummary(clean);
+      } else {
+        throw new Error('Brak odpowiedzi z modelu');
+      }
+    } catch (error: any) {
+      console.error('AI Error:', error);
+      setAiModalVisible(false);
+      Alert.alert('Błąd AI', `Nie udało się wygenerować analizy.\n${error.message || 'Sprawdź połączenie.'}`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator size="large" color={Colors.neonGreen} /></View>;
+  }
+
+  if (!student) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: Spacing.xl }]}>
+        {onClose && <TouchableOpacity onPress={onClose} style={{ position: 'absolute', top: 60, left: 20 }}><ArrowLeft size={24} color={Colors.white} /></TouchableOpacity>}
+        <Text style={{ color: Colors.white, fontSize: FontSize.xl, fontWeight: '800', textAlign: 'center', marginBottom: 8 }}>Brak danych profilu</Text>
+        <Text style={{ color: Colors.gray, fontSize: FontSize.base, textAlign: 'center' }}>Nie znaleziono dokumentu ucznia w bazie danych. Wykonaj najpierw test, aby utworzyć profil.</Text>
+      </View>
+    );
   }
 
   // --- LOGIKA RANKINGÓW ---
@@ -266,8 +343,39 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
               <Text style={styles.downloadButtonText}>📄 Pobierz Paszport PDF</Text>
             </View>
           </TouchableOpacity>
+
+          {/* AI Scouting Button */}
+          <TouchableOpacity style={styles.aiButton} activeOpacity={0.8} onPress={fetchAiSummary}>
+            <Sparkles size={20} color={Colors.bgDeep} />
+            <Text style={styles.aiButtonText}>Analiza Skautingowa AI</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* AI Modal */}
+      <Modal visible={isAiModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.aiModalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.aiModalTitleRow}>
+                <Sparkles size={20} color={Colors.neonGreen} />
+                <Text style={styles.sectionTitle}>Analiza AI</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAiModalVisible(false)}><X size={24} color={Colors.gray} /></TouchableOpacity>
+            </View>
+            {isAiLoading ? (
+              <View style={styles.aiLoadingContainer}>
+                <ActivityIndicator size="large" color={Colors.neonGreen} />
+                <Text style={styles.aiLoadingText}>Przetwarzanie danych przez Google Gemini...</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.aiScrollView} showsVerticalScrollIndicator={false}>
+                <Text style={styles.aiSummaryText}>{aiSummary}</Text>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Edit Modal */}
       <Modal visible={isEditModalVisible} animationType="slide" transparent={true}>
@@ -319,5 +427,13 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#1E2A3A', color: Colors.white, padding: Spacing.md, borderRadius: BorderRadius.md },
   saveBtn: { backgroundColor: Colors.neonGreen, padding: Spacing.md, borderRadius: BorderRadius.full, alignItems: 'center' },
   saveBtnText: { color: Colors.bgDeep, fontWeight: 'bold' },
-  backButton: { padding: Spacing.sm }
+  backButton: { padding: Spacing.sm },
+  aiButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.lg, backgroundColor: Colors.neonGreen, paddingVertical: Spacing.lg, borderRadius: BorderRadius.full, shadowColor: Colors.neonGreen, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 6 },
+  aiButtonText: { color: Colors.bgDeep, fontWeight: '800', fontSize: FontSize.md, letterSpacing: 0.5 },
+  aiModalContent: { backgroundColor: Colors.bgDeep, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: Spacing.xl, paddingBottom: Spacing.xxl, maxHeight: '80%' },
+  aiModalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  aiLoadingContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  aiLoadingText: { color: Colors.gray, fontSize: FontSize.sm, marginTop: Spacing.lg, textAlign: 'center', fontStyle: 'italic' },
+  aiScrollView: { marginTop: Spacing.md },
+  aiSummaryText: { color: Colors.white, fontSize: FontSize.base, lineHeight: 24 },
 });
