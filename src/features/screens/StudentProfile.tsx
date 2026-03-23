@@ -10,9 +10,8 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { LineChart } from 'react-native-chart-kit';
 
-// FIREBASE
-import { auth, db } from '../config/firebase';
-import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+// SUPABASE
+import { supabase } from '../config/supabase';
 
 // COMPONENTS & UTILS FROM MASTER
 import { AchievementsBoard } from '../components/AchievementsBoard';
@@ -104,18 +103,20 @@ export default function StudentProfile({ route, studentId: propStudentId, onClos
 
   const fetchStudentData = async () => {
     try {
-      const targetUid = studentId || auth.currentUser?.uid;
+      let targetUid = studentId;
+      if (!targetUid) {
+        const { data: { user } } = await supabase.auth.getUser();
+        targetUid = user?.id;
+      }
       if (!targetUid) {
         setIsLoading(false);
         return;
       }
 
-      const docRef = doc(db, 'students', targetUid);
-      const docSnap = await getDoc(docRef);
+      const { data } = await supabase.from('students').select('*').eq('id', targetUid).single();
 
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setStudent({ id: docSnap.id, ...data });
+      if (data) {
+        setStudent({ id: data.id, ...data });
         setEditForm({
           weight: data.weight?.toString() || '',
           height: data.height?.toString() || '',
@@ -131,17 +132,23 @@ export default function StudentProfile({ route, studentId: propStudentId, onClos
   };
 
   useEffect(() => {
-    const targetUid = studentId || auth.currentUser?.uid;
-    if (!targetUid) {
-      setIsLoading(false);
-      return;
-    }
+    let targetUid = studentId;
+    let channel: any;
 
-    const docRef = doc(db, 'students', targetUid);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setStudent({ id: docSnap.id, ...data });
+    const initData = async () => {
+      if (!targetUid) {
+        const { data: { user } } = await supabase.auth.getUser();
+        targetUid = user?.id;
+      }
+      if (!targetUid) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Initial fetch
+      const { data } = await supabase.from('students').select('*').eq('id', targetUid).single();
+      if (data) {
+        setStudent({ id: data.id, ...data });
         setEditForm({
           weight: data.weight?.toString() || '',
           height: data.height?.toString() || '',
@@ -150,11 +157,21 @@ export default function StudentProfile({ route, studentId: propStudentId, onClos
       }
       setIsLoading(false);
       setRefreshing(false);
-    }, (error) => {
-      console.error("Błąd pobierania profilu:", error);
-      setIsLoading(false);
-      setRefreshing(false);
-    });
+
+      // Realtime subscription
+      channel = supabase.channel(`student-profile-${targetUid}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'students', filter: `id=eq.${targetUid}` }, (payload) => {
+          const newData = payload.new as any;
+          setStudent({ id: newData.id, ...newData });
+          setEditForm({
+            weight: newData.weight?.toString() || '',
+            height: newData.height?.toString() || '',
+            age: newData.age?.toString() || '',
+          });
+        }).subscribe();
+    };
+
+    initData();
 
     Animated.spring(ratingScale, { toValue: 1, delay: 200, useNativeDriver: true }).start();
     Animated.loop(Animated.sequence([
@@ -163,7 +180,9 @@ export default function StudentProfile({ route, studentId: propStudentId, onClos
     ])).start();
     Animated.loop(Animated.timing(spinValue, { toValue: 1, duration: 3500, useNativeDriver: true })).start();
 
-    return () => unsubscribe();
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [studentId]);
 
   const spin = spinValue.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
@@ -179,14 +198,18 @@ export default function StudentProfile({ route, studentId: propStudentId, onClos
     }
 
     try {
-      const targetUid = studentId || auth.currentUser?.uid;
+      let targetUid = studentId;
+      if (!targetUid) {
+        const { data: { user } } = await supabase.auth.getUser();
+        targetUid = user?.id;
+      }
       if (!targetUid) return;
-      const docRef = doc(db, 'students', targetUid);
 
       const newHistoryEntry = { date: new Date().toISOString(), weight: newWeight };
       const updatedHistory = student.weight !== newWeight ? [...(student.weightHistory || []), newHistoryEntry] : (student.weightHistory || []);
 
-      await updateDoc(docRef, { weight: newWeight, height: newHeight, age: newAge, weightHistory: updatedHistory });
+      const { error } = await supabase.from('students').update({ weight: newWeight, height: newHeight, age: newAge, weightHistory: updatedHistory }).eq('id', targetUid);
+      if (error) throw error;
       setStudent((prev: any) => ({ ...prev, weight: newWeight, height: newHeight, age: newAge, weightHistory: updatedHistory }));
       setEditModalVisible(false);
       Alert.alert('Sukces', 'Profil zaktualizowany.');

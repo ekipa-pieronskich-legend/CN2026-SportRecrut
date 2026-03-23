@@ -6,9 +6,8 @@ import { NeonIcon } from '../components/NeonIcon';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import { getBonusPoints } from '../utils/streakUtils';
 
-// FIREBASE IMPORTS
-import { auth, db } from '../config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+// SUPABASE IMPORTS
+import { supabase } from '../config/supabase';
 
 export default function StreakScreen() {
   const [currentStreak, setCurrentStreak] = useState(0);
@@ -24,13 +23,12 @@ export default function StreakScreen() {
   // Główna funkcja pobierająca dane
   const fetchStreakData = async () => {
     try {
-      const currentUser = auth.currentUser;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) return;
 
-      const studentDoc = await getDoc(doc(db, 'students', currentUser.uid));
+      const { data } = await supabase.from('students').select('*').eq('id', currentUser.id).single();
 
-      if (studentDoc.exists()) {
-        const data = studentDoc.data();
+      if (data) {
         const streak = data.currentStreak || 0;
         const maxStreak = data.longestStreak || streak;
 

@@ -24,9 +24,8 @@ import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import type { RootStackParamList, StudentTabParamList } from '../routes';
 import { checkAnomaly } from '../utils/anomalyUtils';
 
-// FIREBASE IMPORTS
-import { auth, db } from '../config/firebase';
-import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+// SUPABASE IMPORTS
+import { supabase } from '../config/supabase';
 import { updateStreak } from '../utils/streakUtils';
 import { evaluateAchievements, ACHIEVEMENTS } from '../config/achievements';
 import { getRankDisplay } from '../config/ranks';
@@ -146,13 +145,13 @@ export default function TestForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [studentData, setStudentData] = useState<any>(null);
 
-  // Pobierz dane ucznia z Firebase
+  // Pobierz dane ucznia z Supabase
   useEffect(() => {
     const loadUser = async () => {
-      const user = auth.currentUser;
+      const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const docSnap = await getDoc(doc(db, 'students', user.uid));
-        if (docSnap.exists()) setStudentData(docSnap.data());
+        const { data } = await supabase.from('students').select('*').eq('id', user.id).single();
+        if (data) setStudentData(data);
       }
     };
     loadUser();
@@ -309,7 +308,7 @@ export default function TestForm() {
   const processSubmit = async () => {
     try {
       setIsSubmitting(true);
-      const user = auth.currentUser;
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Brak autoryzacji");
 
       // KROK 1: Symulacja uploadu zdjęć
@@ -350,22 +349,28 @@ export default function TestForm() {
 
       const { newMedals, highestRankReward } = evaluateAchievements(exercisesPayload, referenceStudent as any);
 
-      const firebaseUpdate: Record<string, any> = {
-        testResults: arrayUnion(newTestRecord),
+      const currentTestResults = studentData?.testResults || [];
+      const updatedTestResults = [...currentTestResults, newTestRecord];
+
+      const supabaseUpdate: Record<string, any> = {
+        testResults: updatedTestResults,
         lastWorkoutDate: new Date().toISOString(),
       };
 
       if (newMedals.length > 0) {
-        firebaseUpdate.earnedMedals = arrayUnion(...newMedals);
+        const currentMedals = studentData?.earnedMedals || [];
+        const uniqueMedals = Array.from(new Set([...currentMedals, ...newMedals]));
+        supabaseUpdate.earnedMedals = uniqueMedals;
       }
 
       if (highestRankReward !== null && highestRankReward > (studentData?.rankId || 0)) {
-        firebaseUpdate.rankId = highestRankReward;
+        supabaseUpdate.rankId = highestRankReward;
       }
 
-      // KROK 4: Zapis do Firestore
-      const studentRef = doc(db, 'students', user.uid);
-      await updateDoc(studentRef, firebaseUpdate);
+      // KROK 4: Zapis do bazy
+      const { error } = await supabase.from('students').update(supabaseUpdate).eq('id', user.id);
+      if (error) throw error;
+      setStudentData((prev: any) => ({ ...prev, ...supabaseUpdate }));
 
       // KROK 5: Aktualizacja streak
       await updateStreak();
