@@ -1,0 +1,33 @@
+name: Sync GitHub Issues with YouTrack
+
+on:
+  issues:
+    types: [closed, reopened]
+
+jobs:
+  sync-to-youtrack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark YouTrack issue as Fixed when GitHub issue closed
+        if: github.event.action == 'closed'
+        run: |
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          # Szukamy SPO-XXX w tytule lub body issue
+          ISSUE_ID=$(echo "${{ github.event.issue.title }} ${{ github.event.issue.body }}" | grep -oE 'SPO-[0-9]+' | head -1)
+          if [ -n "$ISSUE_ID" ]; then
+            curl -s -X POST "${{ secrets.YOUTRACK_URL }}/api/commands" \
+              -H "Authorization: Bearer ${{ secrets.YOUTRACK_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\": \"Fixed\", \"issues\": [{\"id\": \"$ISSUE_ID\"}]}"
+          fi
+
+      - name: Reopen YouTrack issue when GitHub issue reopened
+        if: github.event.action == 'reopened'
+        run: |
+          ISSUE_ID=$(echo "${{ github.event.issue.title }} ${{ github.event.issue.body }}" | grep -oE 'SPO-[0-9]+' | head -1)
+          if [ -n "$ISSUE_ID" ]; then
+            curl -s -X POST "${{ secrets.YOUTRACK_URL }}/api/commands" \
+              -H "Authorization: Bearer ${{ secrets.YOUTRACK_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\": \"Open\", \"issues\": [{\"id\": \"$ISSUE_ID\"}]}"
+          fi
