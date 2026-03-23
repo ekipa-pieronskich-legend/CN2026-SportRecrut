@@ -4,8 +4,7 @@ import { Medal, TrendingUp, TrendingDown, Flame } from 'lucide-react-native';
 import { NeonCard } from '../components/NeonCard';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import { MOCK_STUDENTS } from '../data/MockStudents';
-import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
-import { db, auth } from '../config/firebase';
+import { supabase } from '../config/supabase';
 import { calculateDynamicStats } from '../utils/rankCalculator';
 import StudentProfile from './StudentProfile';
 
@@ -21,18 +20,15 @@ export default function RankingScreen() {
 
   const fetchRankings = async () => {
     try {
-      const currentUser = auth.currentUser;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
       let targetSchool = '';
       if (currentUser) {
-        const uDoc = await getDoc(doc(db, 'students', currentUser.uid));
-        targetSchool = (uDoc.data()?.school || '').trim().toLowerCase();
+        const { data: uDoc } = await supabase.from('students').select('school').eq('id', currentUser.id).single();
+        targetSchool = (uDoc?.school || '').trim().toLowerCase();
       }
 
-      const usersSnap = await getDocs(collection(db, 'students'));
-      let usersList: any[] = [];
-      usersSnap.forEach((doc) => {
-        usersList.push({ ...doc.data(), id: doc.id });
-      });
+      const { data: usersSnap } = await supabase.from('students').select('*');
+      let usersList: any[] = usersSnap || [];
 
       // Filter to same school (or fallback to all if no school set for safety)
       let studentsInSchool = usersList.filter(u => 

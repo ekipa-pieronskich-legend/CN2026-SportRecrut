@@ -6,9 +6,8 @@ import { NeonIcon } from '../components/NeonIcon';
 
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 
-// FIREBASE IMPORTS
-import { auth, db } from '../config/firebase';
-import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
+// SUPABASE IMPORTS
+import { supabase } from '../config/supabase';
 
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -40,15 +39,15 @@ export default function ReportExport() {
   const fetchReportData = async () => {
     setIsLoading(true);
     try {
-      const currentUser = auth.currentUser;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) {
         setIsLoading(false);
         return;
       }
 
       // 1. Pobieramy profil nauczyciela z 'users'
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      const rawSchool = userDoc.data()?.school;
+      const { data: userDoc } = await supabase.from('users').select('school').eq('id', currentUser.id).single();
+      const rawSchool = userDoc?.school;
 
       if (!rawSchool) {
         setTeacherSchool('Brak przypisanej placówki');
@@ -61,15 +60,14 @@ export default function ReportExport() {
       const targetSchoolLower = cleanSchool.toLowerCase();
 
       // 2. Pobieramy uczniów z kolekcji 'students'
-      const snapshot = await getDocs(collection(db, 'students'));
+      const { data: snapshot } = await supabase.from('students').select('*');
 
       let count = 0;
       let scoreSum = 0;
       let streaks = 0;
       let loadedStudents: any[] = [];
 
-      snapshot.forEach(document => {
-        const data = document.data();
+      snapshot?.forEach(data => {
         const studentSchool = (data.school || '').trim().toLowerCase();
 
         if (studentSchool === targetSchoolLower) {

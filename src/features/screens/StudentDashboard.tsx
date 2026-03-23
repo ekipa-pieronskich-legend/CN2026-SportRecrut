@@ -9,10 +9,8 @@ import { NeonIcon } from '../components/NeonIcon';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import type { RootStackParamList, StudentTabParamList } from '../routes';
 
-// FIREBASE
-import { auth, db } from '../config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
+// SUPABASE
+import { supabase } from '../config/supabase';
 
 type DashboardNavProp = CompositeNavigationProp<
   MaterialTopTabNavigationProp<StudentTabParamList, 'StudentDashboard'>,
@@ -39,14 +37,12 @@ export default function StudentDashboard() {
   // FUNKCJA POBIERANIA DANYCH
   const fetchStudentData = async () => {
     try {
-      const currentUser = auth.currentUser;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) return;
 
-      const studentDoc = await getDoc(doc(db, 'students', currentUser.uid));
+      const { data } = await supabase.from('students').select('*').eq('id', currentUser.id).single();
 
-      if (studentDoc.exists()) {
-        const data = studentDoc.data();
-
+      if (data) {
         // Imię
         if (data.name) {
           setStudentName(data.name.split(' ')[0]);
@@ -60,7 +56,7 @@ export default function StudentDashboard() {
         // Ostatnia aktywność (mapowanie wyników)
         if (data.testResults && data.testResults.length > 0) {
           const sortedTests = [...data.testResults]
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
             .slice(0, 3);
 
           const formattedTests = sortedTests.map((test: any) => ({
@@ -87,7 +83,7 @@ export default function StudentDashboard() {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
       navigation.dispatch(
         CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
       );

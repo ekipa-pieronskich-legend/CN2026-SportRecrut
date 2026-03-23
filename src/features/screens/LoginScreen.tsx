@@ -20,13 +20,8 @@ import { NeonIcon } from '../components/NeonIcon';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import type { RootStackParamList } from '../routes';
 
-// --- FIREBASE IMPORTS ---
-import { auth, db } from '../config/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, getDocs } from 'firebase/firestore';
-
-// (Opcjonalnie) Import funkcji do zasilenia bazy
-import { seedFirestore } from '../utils/seedFirestore';
+// --- SUPABASE IMPORTS ---
+import { supabase } from '../config/supabase';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -134,8 +129,9 @@ export default function LoginScreen() {
 
     const fetchSchools = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'schools'));
-        const schools = snapshot.docs.map(doc => doc.data().name);
+        const { data, error } = await supabase.from('schools').select('name');
+        if (error) throw error;
+        const schools = data?.map(doc => doc.name) || [];
         if (schools.length > 0) setSchoolsList(schools);
         else setSchoolsList(['Szkoła Podstawowa nr 1', 'I Liceum Ogólnokształcące']);
       } catch (error) {
@@ -200,17 +196,19 @@ export default function LoginScreen() {
     try {
       if (isLogin) {
         // ZALOGUJ
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const uid = userCredential.user.uid;
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError) throw authError;
+        const uid = authData.user?.id;
+        if (!uid) throw new Error("Brak UID po zalogowaniu");
 
         // 1. Sprawdzamy, czy jest w tabeli nauczycieli (users)
-        const teacherDoc = await getDoc(doc(db, 'users', uid));
-        if (teacherDoc.exists() && teacherDoc.data().role === 'teacher') {
+        const { data: teacherDoc } = await supabase.from('users').select('role').eq('id', uid).single();
+        if (teacherDoc?.role === 'teacher') {
           navigation.replace('TeacherTabs', { screen: 'TeacherDashboard' } as any);
         } else {
           // 2. Jeśli nie, sprawdzamy czy jest w tabeli uczniów (students)
-          const studentDoc = await getDoc(doc(db, 'students', uid));
-          if (studentDoc.exists()) {
+          const { data: studentDoc } = await supabase.from('students').select('id').eq('id', uid).single();
+          if (studentDoc) {
             navigation.replace('StudentTabs', { screen: 'StudentDashboard' } as any);
           } else {
             // Fallback
@@ -221,15 +219,18 @@ export default function LoginScreen() {
 
       } else {
         // ZAREJESTRUJ
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const uid = userCredential.user.uid;
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+        if (authError) throw authError;
+        if (!authData.user) throw new Error("Nie udało się utworzyć konta");
+        const uid = authData.user.id;
         let finalSchool = selectedSchool;
 
         // Jeśli nauczyciel dodaje szkołę
         if (role === 'teacher' && isAddingNewSchool) {
           finalSchool = newSchoolName;
           const schoolId = newSchoolName.replace(/\s+/g, '_').toLowerCase();
-          await setDoc(doc(db, 'schools', schoolId), {
+          await supabase.from('schools').insert({
+            id: schoolId,
             name: newSchoolName,
             address: newSchoolAddress,
             createdAt: new Date().toISOString()
@@ -240,7 +241,8 @@ export default function LoginScreen() {
 
         if (role === 'teacher') {
           // ZAPIS NAUCZYCIELA DO KOLEKCJI 'users'
-          await setDoc(doc(db, 'users', uid), {
+          await supabase.from('users').insert({
+            id: uid,
             email: email,
             name: safeFullName,
             role: 'teacher',
@@ -251,20 +253,13 @@ export default function LoginScreen() {
 
         } else {
           // ZAPIS UCZNIA DO KOLEKCJI 'students'
-          // Posiada wszystkie pola widoczne na Twoich screenach (stats, UI-avatar, streak, overall)
-          await setDoc(doc(db, 'students', uid), {
-            email: email,
+          await supabase.from('students').insert({
+            id: uid,
             name: safeFullName,
-            role: 'student',
             school: finalSchool,
             age: 12,
             class: '6A',
             avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(safeFullName)}&background=00E676&color=fff`,
-            bonusPoints: 0,
-            currentStreak: 0,
-            longestStreak: 0,
-            inSquad: false,
-            lastWorkoutDate: new Date().toISOString(),
             overall: 60,
             stats: {
               agility: 60,
@@ -274,15 +269,15 @@ export default function LoginScreen() {
               strength: 60
             },
             testResults: [],
-            createdAt: new Date().toISOString()
+            registeredAt: new Date().toISOString()
           });
           navigation.replace('StudentTabs', { screen: 'StudentDashboard' } as any);
         }
       }
     } catch (error: any) {
-      if (error.code === 'auth/email-already-in-use') Alert.alert('Błąd', 'Ten email jest już zarejestrowany.');
-      else if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') Alert.alert('Błąd', 'Błędny email lub hasło.');
-      else Alert.alert('Błąd autoryzacji', error.message);
+      if (error.message?.includes('already registered')) Alert.alert('Błąd', 'Ten email jest już zarejestrowany.');
+      else if (error.message?.includes('Invalid login credentials')) Alert.alert('Błąd', 'Błędny email lub hasło.');
+      else Alert.alert('Błąd autoryzacji', error.message || 'Wystąpił nieznany błąd');
     } finally {
       setIsLoading(false);
     }
@@ -469,10 +464,7 @@ export default function LoginScreen() {
                 {isLoading ? <ActivityIndicator color={Colors.bgDeep} /> : <Text style={styles.primaryButtonText}>{isLogin ? 'ZALOGUJ SIĘ' : 'UTWÓRZ KONTO'}</Text>}
               </TouchableOpacity>
 
-              {/* DEV PRZYCISK - zasilenie bazy */}
-              <TouchableOpacity style={{ marginTop: 20, alignItems: 'center' }} onPress={() => seedFirestore()}>
-                <Text style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>[DEV] Inicjalizuj bazę (Nowy Sącz)</Text>
-              </TouchableOpacity>
+
 
             </Animated.View>
           )}

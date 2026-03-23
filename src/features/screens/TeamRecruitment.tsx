@@ -5,9 +5,8 @@ import { NeonCard } from '../components/NeonCard';
 import { BottomNav } from '../components/BottomNav';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 
-// FIREBASE IMPORTS
-import { auth, db } from '../config/firebase';
-import { collection, getDocs, query, where, getDoc, doc } from 'firebase/firestore';
+// SUPABASE IMPORTS
+import { supabase } from '../config/supabase';
 
 const CATEGORIES = ['Bieg', 'Plank', 'Skok'];
 
@@ -30,15 +29,15 @@ export default function TeamRecruitment() {
   useEffect(() => {
     const fetchStudents = async () => {
       try {
-        const currentUser = auth.currentUser;
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
         if (!currentUser) {
           setIsLoading(false);
           return;
         }
 
         // 1. Sprawdzamy szkołę nauczyciela
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        const teacherSchool = userDoc.data()?.school;
+        const { data: userDoc } = await supabase.from('users').select('school').eq('id', currentUser.id).single();
+        const teacherSchool = userDoc?.school;
 
         if (!teacherSchool) {
           setIsLoading(false);
@@ -46,14 +45,13 @@ export default function TeamRecruitment() {
         }
 
         // 2. Pobieramy uczniów tylko z tej szkoły
-        const q = query(collection(db, 'students'), where('school', '==', teacherSchool));
-        const snapshot = await getDocs(q);
+        const { data: snapshot, error } = await supabase.from('students').select('*').eq('school', teacherSchool);
+        if (error) throw error;
 
-        const fetchedData = snapshot.docs.map(document => {
-          const data = document.data();
+        const fetchedData = snapshot?.map(data => {
           // Tworzymy bezpieczne fallbacki, gdyby uczeń nie miał jeszcze wpisanych statystyk z testów
           return {
-            id: document.id,
+            id: data.id,
             name: data.name || 'Nieznany Uczeń',
             overall: data.overall || 0,
             Bieg: data.stats?.Bieg || Math.floor(Math.random() * 30) + 70, // Generujemy ładne wyniki na hackathon
@@ -63,7 +61,7 @@ export default function TeamRecruitment() {
             isUnderdog: (data.overall < 75 && (data.currentStreak || 0) >= 3),
             progress: `+${Math.floor(Math.random() * 15) + 5}%`,
           };
-        });
+        }) || [];
 
         setSchoolStudents(fetchedData);
       } catch (error) {

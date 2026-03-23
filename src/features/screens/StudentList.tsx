@@ -6,8 +6,7 @@ import { useNavigation, CompositeNavigationProp } from '@react-navigation/native
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MaterialTopTabNavigationProp } from '@react-navigation/material-top-tabs';
 import { NeonCard } from '../components/NeonCard';
-import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
-import { db, auth } from '../config/firebase';
+import { supabase } from '../config/supabase';
 
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import type { RootStackParamList, TeacherTabParamList } from '../routes';
@@ -23,7 +22,7 @@ export default function StudentList() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
   // STANY DLA DANYCH Z FIREBASE
-  const [firebaseStudents, setFirebaseStudents] = useState<any[]>([]);
+  const [loadedStudents, setLoadedStudents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [teacherSchoolName, setTeacherSchoolName] = useState<string>('Wczytywanie placówki...');
 
@@ -33,15 +32,15 @@ export default function StudentList() {
   const fetchStudents = async () => {
     setIsLoading(true);
     try {
-      const currentUser = auth.currentUser;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) {
         setIsLoading(false);
         return;
       }
 
       // 1. Pobieramy profil nauczyciela
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      const rawSchoolName = userDoc.data()?.school;
+      const { data: userDoc } = await supabase.from('users').select('school').eq('id', currentUser.id).single();
+      const rawSchoolName = userDoc?.school;
 
       if (!rawSchoolName) {
         setTeacherSchoolName("Brak przypisanej placówki");
@@ -53,20 +52,20 @@ export default function StudentList() {
       const targetSchool = rawSchoolName.trim().toLowerCase();
       setTeacherSchoolName(rawSchoolName.trim());
 
-      // 2. Pobieramy CAŁĄ kolekcję 'users', a nie 'students'!
-      const snapshot = await getDocs(collection(db, 'students'));
+      // 2. Pobieramy CAŁĄ kolekcję 'students'
+      const { data: snapshot, error } = await supabase.from('students').select('*');
+      if (error) throw error;
 
       let allCount = 0;
       const matchedStudents: any[] = [];
 
-      snapshot.forEach(doc => {
-        const data = doc.data();
+      snapshot?.forEach(data => {
         allCount++;
         const studentSchool = (data.school || '').trim().toLowerCase();
 
         // Jeśli szkoła się zgadza, dodajemy do listy
         if (studentSchool === targetSchool) {
-          matchedStudents.push({ id: doc.id, ...data });
+          matchedStudents.push({ ...data }); // 'id' pole jest już w data
         }
       });
 
@@ -74,7 +73,7 @@ export default function StudentList() {
       setFirebaseStudents(matchedStudents);
 
     } catch (error) {
-      console.error("Błąd pobierania uczniów z Firebase: ", error);
+      console.error("Błąd pobierania uczniów z Supabase: ", error);
       setTeacherSchoolName("Błąd połączenia z bazą");
     } finally {
       setIsLoading(false);
@@ -86,7 +85,7 @@ export default function StudentList() {
   }, []);
 
   // Mapowanie pobranych danych z tabeli 'users'
-  const students = firebaseStudents.map((athlete, index) => {
+  const students = loadedStudents.map((athlete, index) => {
     // Uczniowie prosto z rejestracji mogą nie mieć pola 'overall' itp.
     // Dajemy im bezpieczne fallbacki (np. losowy wynik 60-95), żeby UI się nie posypało.
     const overallScore = athlete.overall ?? athlete.stats?.overall ?? Math.floor(Math.random() * 35) + 60;

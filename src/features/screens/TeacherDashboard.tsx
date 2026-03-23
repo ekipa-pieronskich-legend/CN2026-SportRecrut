@@ -7,13 +7,11 @@ import type { MaterialTopTabNavigationProp } from '@react-navigation/material-to
 import { NeonCard } from '../components/NeonCard';
 import { NeonIcon } from '../components/NeonIcon';
 
-// FIREBASE IMPORTS
-import { auth, db } from '../config/firebase';
-import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
+// SUPABASE IMPORTS
+import { supabase } from '../config/supabase';
 
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import type { RootStackParamList, TeacherTabParamList } from '../routes';
-import { signOut } from 'firebase/auth';
 import { CommonActions } from '@react-navigation/native';
 
 type TeacherDashboardNav = CompositeNavigationProp<
@@ -41,7 +39,7 @@ export default function TeacherDashboard() {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
       navigation.dispatch(
         CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
       );
@@ -64,7 +62,7 @@ export default function TeacherDashboard() {
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
-      const currentUser = auth.currentUser;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) {
         setTeacherName('Gość (Niezalogowany)');
         setIsLoading(false);
@@ -72,8 +70,7 @@ export default function TeacherDashboard() {
       }
 
       // 1. Pobieramy profil nauczyciela
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      const userData = userDoc.data();
+      const { data: userData } = await supabase.from('users').select('*').eq('id', currentUser.id).single();
 
       if (userData?.name) {
         setTeacherName(userData.name);
@@ -86,8 +83,8 @@ export default function TeacherDashboard() {
       if (rawSchoolName) {
         const targetSchool = rawSchoolName.trim().toLowerCase();
 
-        // 2. Pobieramy CAŁĄ kolekcję 'users' i filtrujemy uczniów lokalnie
-        const snapshot = await getDocs(collection(db, 'students'));
+        // 2. Pobieramy bezpośrednio z bazy pożądane rekordy
+        const { data: snapshot } = await supabase.from('students').select('*');
 
         let total = 0;
         let tested = 0;
@@ -95,9 +92,7 @@ export default function TeacherDashboard() {
         let pendingCount = 0;
         let index = 0;
 
-        snapshot.forEach(document => {
-          const data = document.data();
-
+        snapshot?.forEach(data => {
           const studentSchool = (data.school || '').trim().toLowerCase();
 
           if (studentSchool === targetSchool) {
