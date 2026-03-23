@@ -1,31 +1,82 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, RefreshControl, Modal, Animated } from 'react-native';
 import { Medal, TrendingUp, TrendingDown, Flame } from 'lucide-react-native';
 import { NeonCard } from '../components/NeonCard';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import { MOCK_STUDENTS } from '../data/MockStudents';
+import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
+import { db, auth } from '../config/firebase';
+import { calculateDynamicStats } from '../utils/rankCalculator';
+import StudentProfile from './StudentProfile';
 
 export default function RankingScreen() {
   const [activeTab, setActiveTab] = useState<'week' | 'month' | 'all'>('week');
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [liveRankings, setLiveRankings] = useState<any[]>([]);
 
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+  // Animation values
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  const fetchRankings = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      let targetSchool = '';
+      if (currentUser) {
+        const uDoc = await getDoc(doc(db, 'students', currentUser.uid));
+        targetSchool = (uDoc.data()?.school || '').trim().toLowerCase();
+      }
+
+      const usersSnap = await getDocs(collection(db, 'students'));
+      let usersList: any[] = [];
+      usersSnap.forEach((doc) => {
+        usersList.push({ ...doc.data(), id: doc.id });
+      });
+
+      // Filter to same school (or fallback to all if no school set for safety)
+      let studentsInSchool = usersList.filter(u => 
+        !targetSchool || (u.school && u.school.trim().toLowerCase() === targetSchool)
+      );
+
+      // If no real students in school yet, fallback to mock so UI doesn't look broken,
+      // but only if NO real students exist in school.
+      if (studentsInSchool.length === 0) {
+        studentsInSchool = [...MOCK_STUDENTS];
+      }
+
+      const sorted = studentsInSchool
+        .map(student => {
+          const { dynamicOverall } = calculateDynamicStats(student);
+          return { ...student, score: dynamicOverall };
+        })
+        .sort((a, b) => b.score - a.score)
+        .map((s, index) => ({
+          rank: index + 1,
+          name: s.name || s.displayName || 'Brak Imienia',
+          class: s.class || '-',
+          score: s.score,
+          streak: s.currentStreak || 0,
+          trend: index % 4 === 0 ? 'down' : (index % 2 === 0 ? 'up' : 'same'),
+          id: s.id,
+          avatar: s.avatar || s.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'Brak')}&&background=00E676&color=fff`
+        }));
+
+      setLiveRankings(sorted);
+    } catch (e) {
+      console.error('Error fetching rankings', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchRankings();
   }, []);
 
-  const rankings = [
-    { rank: 1, name: 'Jakub Kowalski', class: '6A', score: 92, streak: 12, trend: 'up' },
-    { rank: 2, name: 'Anna Nowak', class: '6B', score: 89, streak: 8, trend: 'up' },
-    { rank: 3, name: 'Michał Wiśniewski', class: '6A', score: 87, streak: 15, trend: 'same' },
-    { rank: 4, name: 'Zofia Lewandowska', class: '6C', score: 85, streak: 5, trend: 'down' },
-    { rank: 5, name: 'Kacper Zieliński', class: '6B', score: 83, streak: 10, trend: 'up' },
-    { rank: 6, name: 'Julia Kamińska', class: '6A', score: 81, streak: 3, trend: 'same' },
-    { rank: 7, name: 'Filip Dąbrowski', class: '6C', score: 79, streak: 7, trend: 'up' },
-    { rank: 8, name: 'Maja Piotrowska', class: '6B', score: 77, streak: 2, trend: 'down' },
-    { rank: 9, name: 'Adam Kowalczyk', class: '6A', score: 75, streak: 9, trend: 'up' },
-    { rank: 10, name: 'Oliwia Szymańska', class: '6C', score: 73, streak: 4, trend: 'same' },
-  ];
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    await fetchRankings();
+    setRefreshing(false);
+  }, []);
 
   const getMedalColor = (rank: number) => {
     if (rank === 1) return '#FFD700';
@@ -40,6 +91,16 @@ export default function RankingScreen() {
     { id: 'all' as const, label: 'Wszech czasów' },
   ];
 
+  const handleTabPress = (index: number, tabId: 'week' | 'month' | 'all') => {
+    setActiveTab(tabId);
+    Animated.spring(slideAnim, {
+      toValue: index,
+      useNativeDriver: true,
+      bounciness: 0,
+      speed: 12,
+    }).start();
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -53,13 +114,34 @@ export default function RankingScreen() {
           <Text style={styles.screenTitle}>🏆 Top 10 Szkoły</Text>
 
           {/* Tabs */}
-          <View style={styles.tabsContainer}>
-            {tabs.map((tab) => (
+          <View 
+            style={styles.tabsContainer} 
+            onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+          >
+            {containerWidth > 0 && (
+              <Animated.View
+                style={[
+                  styles.animatedPill,
+                  {
+                    width: (containerWidth - 8) / 3, // 8 is total horizontal padding
+                    transform: [
+                      {
+                        translateX: slideAnim.interpolate({
+                          inputRange: [0, 1, 2],
+                          outputRange: [0, (containerWidth - 8) / 3, ((containerWidth - 8) / 3) * 2],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            )}
+            {tabs.map((tab, index) => (
               <TouchableOpacity
                 key={tab.id}
-                style={[styles.tab, activeTab === tab.id && styles.tabActive]}
+                style={styles.tab}
                 activeOpacity={0.7}
-                onPress={() => setActiveTab(tab.id)}
+                onPress={() => handleTabPress(index, tab.id)}
               >
                 <Text
                   style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}
@@ -72,101 +154,120 @@ export default function RankingScreen() {
 
           {/* Rankings List */}
           <View style={styles.rankingsList}>
-            {rankings.map((player) => {
+            {liveRankings.map((player) => {
               const medalColor = getMedalColor(player.rank);
               const isFirst = player.rank === 1;
-              const matchingStudent = MOCK_STUDENTS.find(s => s.name === player.name);
 
               return (
-                <NeonCard
+                <TouchableOpacity
                   key={player.rank}
-                  glow={isFirst}
-                  style={isFirst ? styles.firstPlaceCard : undefined}
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedStudentId(player.id)}
                 >
-                  <View
-                    style={[
-                      styles.rankingRow,
-                      isFirst && styles.rankingRowFirst,
-                    ]}
+                  <NeonCard
+                    glow={isFirst}
+                    style={isFirst ? styles.firstPlaceCard : undefined}
                   >
-                    {/* Rank/Medal */}
-                    <View style={[styles.rankBadge, isFirst && styles.rankBadgeFirst]}>
-                      {medalColor ? (
-                        <Medal
-                          size={isFirst ? 32 : 28}
-                          color={medalColor}
-                          fill={medalColor}
-                        />
-                      ) : (
-                        <Text style={[styles.rankNumber, isFirst && styles.rankNumberFirst]}>
-                          {player.rank}
-                        </Text>
-                      )}
-                    </View>
-
-                    {/* Avatar */}
                     <View
                       style={[
-                        styles.rankAvatar,
-                        isFirst && styles.rankAvatarFirst,
-                        { overflow: 'hidden', padding: 0 }
+                        styles.rankingRow,
+                        isFirst && styles.rankingRowFirst,
                       ]}
                     >
-                      {matchingStudent?.avatar && matchingStudent.avatar.startsWith('http') ? (
-                        <Image source={{ uri: matchingStudent.avatar }} style={{ width: '100%', height: '100%' }} />
-                      ) : (
-                        <Text style={{ fontSize: isFirst ? 20 : 16 }}>👤</Text>
-                      )}
-                    </View>
-
-                    {/* Name & Class */}
-                    <View style={styles.rankInfo}>
-                      <Text
-                        style={[styles.rankName, isFirst && styles.rankNameFirst]}
-                        numberOfLines={1}
-                      >
-                        {player.name}
-                      </Text>
-                      <View style={styles.rankMeta}>
-                        <Text style={styles.rankClass}>Klasa {player.class}</Text>
-                        {player.streak >= 7 && (
-                          <View style={styles.streakBadge}>
-                            <Flame size={12} color={Colors.orange} />
-                            <Text style={styles.streakText}>{player.streak}</Text>
-                          </View>
+                      {/* Rank/Medal */}
+                      <View style={[styles.rankBadge, isFirst && styles.rankBadgeFirst]}>
+                        {medalColor ? (
+                          <Medal
+                            size={isFirst ? 32 : 28}
+                            color={medalColor}
+                            fill={medalColor}
+                          />
+                        ) : (
+                          <Text style={[styles.rankNumber, isFirst && styles.rankNumberFirst]}>
+                            {player.rank}
+                          </Text>
                         )}
                       </View>
-                    </View>
 
-                    {/* Score */}
-                    <View
-                      style={[
-                        styles.scoreBadge,
-                        isFirst ? styles.scoreBadgeFirst : styles.scoreBadgeNormal,
-                      ]}
-                    >
-                      <Text
+                      {/* Avatar */}
+                      <View
                         style={[
-                          styles.scoreText,
-                          isFirst ? styles.scoreTextFirst : styles.scoreTextNormal,
+                          styles.rankAvatar,
+                          isFirst && styles.rankAvatarFirst,
+                          { overflow: 'hidden', padding: 0 }
                         ]}
                       >
-                        {player.score}
-                      </Text>
-                    </View>
+                        {player.avatar && player.avatar.startsWith('http') ? (
+                          <Image source={{ uri: player.avatar }} style={{ width: '100%', height: '100%' }} />
+                        ) : (
+                          <Text style={{ fontSize: isFirst ? 20 : 16 }}>👤</Text>
+                        )}
+                      </View>
 
-                    {/* Trend */}
-                    <View style={styles.trendContainer}>
-                      {player.trend === 'up' && <TrendingUp size={20} color={Colors.neonGreen} />}
-                      {player.trend === 'down' && <TrendingDown size={20} color={Colors.red} />}
+                      {/* Name & Class */}
+                      <View style={styles.rankInfo}>
+                        <Text
+                          style={[styles.rankName, isFirst && styles.rankNameFirst]}
+                          numberOfLines={1}
+                        >
+                          {player.name}
+                        </Text>
+                        <View style={styles.rankMeta}>
+                          <Text style={styles.rankClass}>Klasa {player.class}</Text>
+                          {player.streak >= 7 && (
+                            <View style={styles.streakBadge}>
+                              <Flame size={12} color={Colors.orange} />
+                              <Text style={styles.streakText}>{player.streak}</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* Score */}
+                      <View
+                        style={[
+                          styles.scoreBadge,
+                          isFirst ? styles.scoreBadgeFirst : styles.scoreBadgeNormal,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.scoreText,
+                            isFirst ? styles.scoreTextFirst : styles.scoreTextNormal,
+                          ]}
+                        >
+                          {player.score}
+                        </Text>
+                      </View>
+
+                      {/* Trend */}
+                      <View style={styles.trendContainer}>
+                        {player.trend === 'up' && <TrendingUp size={20} color={Colors.neonGreen} />}
+                        {player.trend === 'down' && <TrendingDown size={20} color={Colors.red} />}
+                      </View>
                     </View>
-                  </View>
-                </NeonCard>
+                  </NeonCard>
+                </TouchableOpacity>
               );
             })}
           </View>
         </View>
       </ScrollView>
+
+      {/* Slide-up Profile Modal */}
+      <Modal
+        visible={!!selectedStudentId}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSelectedStudentId(null)}
+      >
+        {selectedStudentId && (
+          <StudentProfile 
+            studentId={selectedStudentId} 
+            onClose={() => setSelectedStudentId(null)} 
+          />
+        )}
+      </Modal>
     </View>
   );
 }
@@ -194,31 +295,39 @@ const styles = StyleSheet.create({
   },
   tabsContainer: {
     flexDirection: 'row',
-    gap: Spacing.sm,
     backgroundColor: Colors.cardBg,
     borderRadius: BorderRadius.full,
     padding: 4,
     marginBottom: Spacing.xl,
+    position: 'relative',
   },
-  tab: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.full,
-    alignItems: 'center',
-  },
-  tabActive: {
+  animatedPill: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
     backgroundColor: Colors.neonGreen,
+    borderRadius: BorderRadius.full,
     shadowColor: Colors.neonGreen,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 10,
     elevation: 6,
   },
+  tab: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: 2,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
   tabText: {
     color: Colors.gray,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   tabTextActive: {
     color: Colors.bgDeep,

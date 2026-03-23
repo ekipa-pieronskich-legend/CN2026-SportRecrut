@@ -9,6 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@react-native-async-storage/async-storage": "^2.1.0",
     "@react-navigation/bottom-tabs": "^7.0.0",
     "@react-navigation/material-top-tabs": "^7.4.20",
@@ -17,6 +18,7 @@
     "expo": "~54.0.33",
     "expo-image-picker": "~17.0.10",
     "expo-location": "~19.0.8",
+    "expo-mail-composer": "~15.0.8",
     "expo-print": "~15.0.8",
     "expo-sharing": "~14.0.8",
     "expo-status-bar": "~3.0.9",

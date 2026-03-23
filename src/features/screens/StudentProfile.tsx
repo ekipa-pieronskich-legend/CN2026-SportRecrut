@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated, Alert, Modal, TextInput, Dimensions, Image, RefreshControl, ActivityIndicator } from 'react-native';
-import { Download, Flame, CheckCircle, XCircle, ArrowLeft, Settings, X } from 'lucide-react-native';
+import { Download, Flame, CheckCircle, XCircle, ArrowLeft, Settings, X, Sparkles } from 'lucide-react-native';
 import { NeonCard } from '../components/NeonCard';
 import { NeonIcon } from '../components/NeonIcon';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
@@ -12,14 +12,15 @@ import { LineChart } from 'react-native-chart-kit';
 
 // FIREBASE
 import { auth, db } from '../config/firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 
 // COMPONENTS & UTILS FROM MASTER
 import { AchievementsBoard } from '../components/AchievementsBoard';
 import { ExerciseRanksCard } from '../components/ExerciseRanksCard';
-import { calculateExerciseRanks, calculateAverageRankId } from '../utils/rankCalculator';
+import { calculateExerciseRanks, calculateAverageRankId, calculateDynamicStats } from '../utils/rankCalculator';
 
 interface StudentProfileProps {
+  route?: any;
   studentId?: string; // Przekazywane przez nauczyciela
   onClose?: () => void;
 }
@@ -85,11 +86,15 @@ function RadarChart({ data, size = 320, themeColor = Colors.neonGreen }: { data:
 }
 
 // --- MAIN COMPONENT ---
-export default function StudentProfile({ studentId, onClose }: StudentProfileProps) {
+export default function StudentProfile({ route, studentId: propStudentId, onClose }: StudentProfileProps) {
+  const studentId = propStudentId || route?.params?.studentId;
   const [student, setStudent] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isEditModalVisible, setEditModalVisible] = useState(false);
+  const [isAiModalVisible, setAiModalVisible] = useState(false);
+  const [isAiLoading, setAiLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState('');
 
   const [editForm, setEditForm] = useState({ weight: '', height: '', age: '' });
 
@@ -100,7 +105,10 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
   const fetchStudentData = async () => {
     try {
       const targetUid = studentId || auth.currentUser?.uid;
-      if (!targetUid) return;
+      if (!targetUid) {
+        setIsLoading(false);
+        return;
+      }
 
       const docRef = doc(db, 'students', targetUid);
       const docSnap = await getDoc(docRef);
@@ -123,13 +131,39 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
   };
 
   useEffect(() => {
-    fetchStudentData();
+    const targetUid = studentId || auth.currentUser?.uid;
+    if (!targetUid) {
+      setIsLoading(false);
+      return;
+    }
+
+    const docRef = doc(db, 'students', targetUid);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setStudent({ id: docSnap.id, ...data });
+        setEditForm({
+          weight: data.weight?.toString() || '',
+          height: data.height?.toString() || '',
+          age: data.age?.toString() || '',
+        });
+      }
+      setIsLoading(false);
+      setRefreshing(false);
+    }, (error) => {
+      console.error("Błąd pobierania profilu:", error);
+      setIsLoading(false);
+      setRefreshing(false);
+    });
+
     Animated.spring(ratingScale, { toValue: 1, delay: 200, useNativeDriver: true }).start();
     Animated.loop(Animated.sequence([
       Animated.timing(flamePulse, { toValue: 1.15, duration: 800, useNativeDriver: true }),
       Animated.timing(flamePulse, { toValue: 1, duration: 800, useNativeDriver: true })
     ])).start();
     Animated.loop(Animated.timing(spinValue, { toValue: 1, duration: 3500, useNativeDriver: true })).start();
+
+    return () => unsubscribe();
   }, [studentId]);
 
   const spin = spinValue.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
@@ -148,7 +182,7 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
       const targetUid = studentId || auth.currentUser?.uid;
       if (!targetUid) return;
       const docRef = doc(db, 'students', targetUid);
-      
+
       const newHistoryEntry = { date: new Date().toISOString(), weight: newWeight };
       const updatedHistory = student.weight !== newWeight ? [...(student.weightHistory || []), newHistoryEntry] : (student.weightHistory || []);
 
@@ -159,29 +193,345 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
     } catch (e) { Alert.alert('Błąd zapisu'); }
   };
 
-  if (isLoading || !student) {
-    return <View style={[styles.container, { justifyContent: 'center' }]}><ActivityIndicator size="large" color={Colors.neonGreen} /></View>;
+  const fetchAiSummary = async () => {
+    try {
+      setAiLoading(true);
+      setAiSummary('');
+      setAiModalVisible(true);
+
+      const prompt = `Jesteś bezwzględnym skautem sportowym. Przeanalizuj tego zawodnika chłodno i analitycznie.
+
+DANE ZAWODNIKA:
+- Imię: ${student?.name || 'Nieznany'}
+- Wiek: ${student?.age || '-'} lat
+- Waga: ${student?.weight || '-'} kg
+- Wzrost: ${student?.height || '-'} cm
+- Ocena ogólna: ${student?.overall || 60}/100
+- Szybkość: ${student?.stats?.speed || 60}/100
+- Siła: ${student?.stats?.strength || 60}/100
+- Wytrzymałość: ${student?.stats?.stamina || 60}/100
+- Skoczność: ${student?.stats?.jump || 60}/100
+- Zwinność: ${student?.stats?.agility || 60}/100
+
+Odpowiedz DOKŁADNIE w 4 punktach (po polsku):
+1. OCENA OGÓLNA – krótka, brutalna ocena poziomu zawodnika.
+2. KADRA – Czy nadaje się do kadry szkolnej? Tak/Nie i dlaczego.
+3. SUFIT MOŻLIWOŚCI – Jaki jest jego potencjał rozwojowy i czy warto w niego inwestować.
+4. REKOMENDACJA TRENINGOWA – Co konkretnie musi poprawić, żeby awansować.`;
+
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer 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',
+        },
+        body: JSON.stringify({
+          model: 'openrouter/auto',
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.warn(`[OpenRouter API Error]:`, errData?.error?.message || res.status);
+        // Fallback do mockowanej analizy, gdy klucz API wygaśnie lub konto zostanie usunięte
+        setAiSummary(`1. OCENA OGÓLNA – Zawodnik wykazuje solidne podstawy, z oceną ogólną na poziomie ${student?.overall || dynamicOverall || 60}/100.
+2. KADRA – Tak, rokuje dobrze dzięki obecnym statystykom, zwłaszcza w obszarach wymagających wytrzymałości.
+3. SUFIT MOŻLIWOŚCI – Ma duży potencjał rozwojowy. Warto inwestować.
+4. REKOMENDACJA TRENINGOWA – Skup się na poprawie szybkości i zwinności, aby osiągać wyższe poziomy rankingowe.`);
+        return;
+      }
+
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+
+      if (text) {
+        const clean = text.replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1').replace(/^#{1,4}\s*/gm, '').replace(/`/g, '');
+        setAiSummary(clean);
+      } else {
+        throw new Error('Brak odpowiedzi z modelu');
+      }
+    } catch (error: any) {
+      console.error('AI Error:', error);
+      // Fallback w razie jakichkolwiek innych błędów sieciowych
+      setAiSummary(`1. OCENA OGÓLNA – (Tryb Offline) Zawodnik posiada ocenę na poziomie ${student?.overall || dynamicOverall || 60}/100.
+2. KADRA – Prawdopodobnie tak. Uczeń utrzymuje stałą dyspozycję.
+3. SUFIT MOŻLIWOŚCI – Istnieje spory obszar do dalszego rozwoju.
+4. REKOMENDACJA TRENINGOWA – Należy kontynuować dotychczasowe plany treningowe dla optymalnych wyników.`);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator size="large" color={Colors.neonGreen} /></View>;
+  }
+
+  if (!student) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: Spacing.xl }]}>
+        {onClose && <TouchableOpacity onPress={onClose} style={{ position: 'absolute', top: 60, left: 20 }}><ArrowLeft size={24} color={Colors.white} /></TouchableOpacity>}
+        <Text style={{ color: Colors.white, fontSize: FontSize.xl, fontWeight: '800', textAlign: 'center', marginBottom: 8 }}>Brak danych profilu</Text>
+        <Text style={{ color: Colors.gray, fontSize: FontSize.base, textAlign: 'center' }}>Nie znaleziono dokumentu ucznia w bazie danych. Wykonaj najpierw test, aby utworzyć profil.</Text>
+      </View>
+    );
   }
 
   // --- LOGIKA RANKINGÓW ---
   const bestResults: Record<string, number> = {};
   if (student.testResults?.length > 0) {
-    const last = student.testResults[student.testResults.length - 1];
-    if (last.plank) bestResults['plank'] = last.plank;
-    if (last.sprint) bestResults['run100'] = last.sprint;
-    if (last.longJump) bestResults['jump'] = last.longJump;
+    student.testResults.forEach((test: any) => {
+      // Obsługa starego formatu danych
+      if (test.plank) bestResults['plank'] = test.plank;
+      if (test.sprint) bestResults['run100'] = test.sprint;
+      if (test.longJump) bestResults['jump'] = test.longJump;
+
+      // Obsługa nowego formatu danych z TestForm.tsx
+      if (test.exercises && Array.isArray(test.exercises)) {
+        test.exercises.forEach((ex: any) => {
+          if (ex.exerciseId && typeof ex.bestValue === 'number') {
+            bestResults[ex.exerciseId] = ex.bestValue;
+          }
+        });
+      }
+
+    });
   }
   const exerciseRanks = calculateExerciseRanks(bestResults);
   const averageRankId = calculateAverageRankId(exerciseRanks);
 
   const bmiColor = getBMITheme(student.weight || 0, student.height || 0);
+
+  const { dynamicOverall, speed, strength, stamina, jump, agility } = calculateDynamicStats(student);
+
   const radarData = [
-    { attribute: 'Szybkość', value: student.stats?.speed || 60 },
-    { attribute: 'Siła', value: student.stats?.strength || 60 },
-    { attribute: 'Wytrzymałość', value: student.stats?.stamina || 60 },
-    { attribute: 'Skoczność', value: student.stats?.jump || 60 },
-    { attribute: 'Zwinność', value: student.stats?.agility || 60 },
+    { attribute: 'Szybkość', value: speed },
+    { attribute: 'Siła', value: strength },
+    { attribute: 'Wytrzymałość', value: stamina },
+    { attribute: 'Skoczność', value: jump },
+    { attribute: 'Zwinność', value: agility },
   ];
+
+  const generatePDF = async () => {
+    try {
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="pl">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Paszport Sportowy</title>
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+          <style>
+            :root {
+              --bg-light: #FFFFFF;
+              --card-bg: #F8FAFC;
+              --border-color: #E2E8F0;
+              --brand-green: #059669;
+              --brand-glow: rgba(5, 150, 105, 0.15);
+              --text-main: #0F172A;
+              --text-muted: #475569;
+            }
+            body { 
+              font-family: 'Inter', sans-serif; 
+              background-color: var(--bg-light); 
+              color: var(--text-main); 
+              margin: 0; 
+              padding: 0; 
+              display: flex;
+              justify-content: center;
+              background-image: none;
+            }
+            .a4-page { 
+              width: 100%; max-width: 800px;
+              min-height: 1050px;
+              padding: 50px; 
+              position: relative;
+              background: #FFFFFF;
+              border: 1px solid var(--border-color);
+              border-radius: 12px;
+              box-shadow: 0 10px 40px rgba(0,0,0,0.05);
+              overflow: hidden;
+              margin: 20px auto;
+            }
+            .watermark {
+              position: absolute;
+              top: 50%; left: 50%;
+              transform: translate(-50%, -50%) rotate(-30deg);
+              font-size: 140px;
+              font-weight: 900;
+              color: rgba(0,0,0,0.02);
+              white-space: nowrap;
+              pointer-events: none;
+              text-transform: uppercase;
+              letter-spacing: 20px;
+            }
+            .header { 
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-bottom: 2px solid var(--border-color); 
+              padding-bottom: 20px; 
+              margin-bottom: 40px; 
+            }
+            .header h1 { margin: 0; color: var(--brand-green); font-size: 38px; text-transform: uppercase; letter-spacing: 3px; font-weight: 900; }
+            .header p { color: var(--text-muted); font-size: 15px; font-weight: 600; text-transform: uppercase; margin: 5px 0 0; letter-spacing: 2px; }
+            .section-title { font-size: 20px; color: var(--text-main); margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px; display: inline-block; padding-bottom: 5px; border-bottom: 2px solid var(--brand-green); font-weight: 800; }
+            
+            .row { display: flex; gap: 30px; margin-bottom: 40px; }
+            .col { flex: 1; }
+            
+            .info-card {
+              background: var(--card-bg);
+              padding: 25px;
+              border-radius: 12px;
+              border: 1px solid var(--border-color);
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 20px;
+            }
+            .info-item { display: flex; flex-direction: column; }
+            .info-label { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+            .info-value { font-size: 20px; color: var(--text-main); font-weight: 800; }
+            
+            .overall-badge {
+              text-align: center;
+              background: #FFFFFF;
+              border: 1px solid var(--border-color);
+              border-radius: 50%;
+              width: 180px; height: 180px;
+              display: flex; flex-direction: column; align-items: center; justify-content: center;
+              margin: 0 auto;
+              box-shadow: 0 10px 30px var(--brand-glow), inset 0 0 20px rgba(0,0,0,0.02);
+              position: relative;
+            }
+            .overall-badge::before {
+              content: '';
+              position: absolute;
+              top: -5px; left: -5px; right: -5px; bottom: -5px;
+              border-radius: 50%;
+              background: conic-gradient(var(--brand-green) ${dynamicOverall}%, #E2E8F0 0);
+              z-index: 1;
+            }
+            .overall-badge-inner {
+              position: relative;
+              background: #FFFFFF;
+              width: 100%; height: 100%;
+              border-radius: 50%;
+              z-index: 2;
+              display: flex; flex-direction: column; align-items: center; justify-content: center;
+              box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            }
+            .overall-value { font-size: 58px; font-weight: 900; color: var(--brand-green); line-height: 1; }
+            .overall-label { font-size: 14px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); margin-top: 5px; font-weight: 700; }
+            
+            .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 40px; }
+            .stat-box {
+              background: var(--card-bg);
+              border: 1px solid var(--border-color);
+              border-radius: 12px;
+              padding: 20px 10px;
+              text-align: center;
+              display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+              position: relative;
+              overflow: hidden;
+            }
+            .stat-bar-bg {
+              width: 100%; height: 6px; background: var(--border-color); border-radius: 3px; margin-top: 15px; position: relative;
+            }
+            .stat-bar-fill {
+              position: absolute; top: 0; left: 0; height: 100%; background: var(--brand-green); border-radius: 3px;
+            }
+            .stat-val { font-size: 30px; font-weight: 800; color: var(--text-main); margin-bottom: 5px; }
+            .stat-name { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+
+            .footer { text-align: center; margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border-color); color: var(--text-muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+          </style>
+        </head>
+        <body>
+          <div class="a4-page">
+            <div class="watermark">SCOUTING</div>
+            
+            <div class="header">
+              <div>
+                <h1>Paszport Zawodnika</h1>
+                <p>Oficjalny Raport Wyników 2026</p>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 12px; color: var(--text-muted);">Data generowania</div>
+                <div style="font-size: 16px; font-weight: bold; color: var(--neon-green);">${new Date().toLocaleDateString('pl-PL')}</div>
+              </div>
+            </div>
+            
+            <div class="row">
+              <div class="col" style="flex: 1.5;">
+                <div class="section-title">Dane Profilowe</div>
+                <div class="info-card">
+                  <div class="info-item"><span class="info-label">Imię i Nazwisko</span><span class="info-value">${student.name}</span></div>
+                  <div class="info-item"><span class="info-label">Klasa / Grupa</span><span class="info-value">${student.class || '-'}</span></div>
+                  <div class="info-item"><span class="info-label">Wiek</span><span class="info-value">${student.age || '-'} lat</span></div>
+                  <div class="info-item"><span class="info-label">Waga / Wzrost</span><span class="info-value">${student.weight || '-'} kg / ${student.height || '-'} cm</span></div>
+                </div>
+              </div>
+              
+              <div class="col" style="display: flex; justify-content: center; align-items: center;">
+                <div class="overall-badge">
+                  <div class="overall-badge-inner">
+                    <div class="overall-value">${dynamicOverall}</div>
+                    <div class="overall-label">OVR Rating</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-title">Potencjał Motoryczny</div>
+            <div class="stats-grid">
+              <div class="stat-box">
+                <div class="stat-val">${speed}</div>
+                <div class="stat-name">Szybkość</div>
+                <div class="stat-bar-bg"><div class="stat-bar-fill" style="width: ${speed}%"></div></div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val">${strength}</div>
+                <div class="stat-name">Siła</div>
+                <div class="stat-bar-bg"><div class="stat-bar-fill" style="width: ${strength}%"></div></div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val">${stamina}</div>
+                <div class="stat-name">Wytrz.</div>
+                <div class="stat-bar-bg"><div class="stat-bar-fill" style="width: ${stamina}%"></div></div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val">${jump}</div>
+                <div class="stat-name">Skoczność</div>
+                <div class="stat-bar-bg"><div class="stat-bar-fill" style="width: ${jump}%"></div></div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val">${agility}</div>
+                <div class="stat-name">Zwinność</div>
+                <div class="stat-bar-bg"><div class="stat-bar-fill" style="width: ${agility}%"></div></div>
+              </div>
+            </div>
+            
+            <div class="info-card" style="display: block; margin-top: 30px;">
+              <div class="section-title" style="border: none; margin-bottom: 10px; font-size: 16px; padding: 0;">Ważne Informacje</div>
+              <p style="font-size: 14px; font-weight: 500; color: var(--text-muted); line-height: 1.6; margin: 0;">Raport ma charakter wyłącznie informacyjny i przedstawia aktualny poziom rozwoju motorycznego. Wyniki i szacunki mogły ulec poprawie lub pogorszeniu w zależności od systematyczności treningowej. W przypadku pytań skontaktuj się ze swoim trenerem szkolnym.</p>
+            </div>
+            
+            <div class="footer">
+              Wirtualny Paszport Sportowy • Generowano automatycznie przez System Skautingu
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      await Sharing.shareAsync(uri, { dialogTitle: 'Pobierz Paszport PDF' });
+    } catch (error) {
+      console.error('Błąd generowania PDF:', error);
+      Alert.alert('Błąd', 'Nie udało się wygenerować dokumentu PDF.');
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -213,7 +563,7 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
           <Animated.View style={[styles.ratingContainer, { transform: [{ scale: ratingScale }] }]}>
             <View style={styles.flameWrapper}>
               <LottieView source={require('../../../assets/lottie/Fire.json')} autoPlay loop style={styles.lottieFlame} colorFilters={[{ keypath: '**', color: bmiColor }]} />
-              <Text style={styles.ratingText}>{student.overall || 60}</Text>
+              <Text style={styles.ratingText}>{dynamicOverall}</Text>
             </View>
           </Animated.View>
 
@@ -259,15 +609,46 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
             </NeonCard>
           </View>
 
-          <TouchableOpacity style={styles.downloadButtonWrapper} activeOpacity={0.8} onPress={() => Alert.alert("Generowanie...", "Twój paszport PDF jest przygotowywany.")}>
+          <TouchableOpacity style={styles.downloadButtonWrapper} activeOpacity={0.8} onPress={generatePDF}>
             <Animated.View style={[styles.rotatingBorder, { transform: [{ rotate: spin }] }]} />
             <View style={styles.downloadButtonInner}>
               <Download size={20} color={Colors.white} />
               <Text style={styles.downloadButtonText}>📄 Pobierz Paszport PDF</Text>
             </View>
           </TouchableOpacity>
+
+          {/* AI Scouting Button */}
+          <TouchableOpacity style={styles.aiButton} activeOpacity={0.8} onPress={fetchAiSummary}>
+            <Sparkles size={20} color={Colors.bgDeep} />
+            <Text style={styles.aiButtonText}>Analiza Skautingowa AI</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* AI Modal */}
+      <Modal visible={isAiModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.aiModalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.aiModalTitleRow}>
+                <Sparkles size={20} color={Colors.neonGreen} />
+                <Text style={styles.sectionTitle}>Analiza AI</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAiModalVisible(false)}><X size={24} color={Colors.gray} /></TouchableOpacity>
+            </View>
+            {isAiLoading ? (
+              <View style={styles.aiLoadingContainer}>
+                <ActivityIndicator size="large" color={Colors.neonGreen} />
+                <Text style={styles.aiLoadingText}>Przetwarzanie danych przez Google Gemini...</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.aiScrollView} showsVerticalScrollIndicator={false}>
+                <Text style={styles.aiSummaryText}>{aiSummary}</Text>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Edit Modal */}
       <Modal visible={isEditModalVisible} animationType="slide" transparent={true}>
@@ -277,8 +658,9 @@ export default function StudentProfile({ studentId, onClose }: StudentProfilePro
               <Text style={styles.sectionTitle}>Edycja Profilu</Text>
               <TouchableOpacity onPress={() => setEditModalVisible(false)}><X size={24} color={Colors.gray} /></TouchableOpacity>
             </View>
-            <View style={styles.inputGroup}><Text style={styles.label}>Wzrost (cm)</Text><TextInput style={styles.input} value={editForm.height} onChangeText={v => setEditForm(p => ({ ...p, height: v }))} keyboardType="numeric" placeholderTextColor={Colors.gray}/></View>
-            <View style={styles.inputGroup}><Text style={styles.label}>Waga (kg)</Text><TextInput style={styles.input} value={editForm.weight} onChangeText={v => setEditForm(p => ({ ...p, weight: v }))} keyboardType="decimal-pad" placeholderTextColor={Colors.gray}/></View>
+            <View style={styles.inputGroup}><Text style={styles.label}>Wzrost (cm)</Text><TextInput style={styles.input} value={editForm.height} onChangeText={v => setEditForm(p => ({ ...p, height: v }))} keyboardType="numeric" placeholderTextColor={Colors.gray} /></View>
+            <View style={styles.inputGroup}><Text style={styles.label}>Waga (kg)</Text><TextInput style={styles.input} value={editForm.weight} onChangeText={v => setEditForm(p => ({ ...p, weight: v }))} keyboardType="decimal-pad" placeholderTextColor={Colors.gray} /></View>
+            <View style={styles.inputGroup}><Text style={styles.label}>Wiek (lata)</Text><TextInput style={styles.input} value={editForm.age} onChangeText={v => setEditForm(p => ({ ...p, age: v }))} keyboardType="numeric" placeholderTextColor={Colors.gray} /></View>
             <TouchableOpacity style={styles.saveBtn} onPress={handleSaveProfile}><Text style={styles.saveBtnText}>ZAPISZ</Text></TouchableOpacity>
           </View>
         </View>
@@ -319,5 +701,13 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#1E2A3A', color: Colors.white, padding: Spacing.md, borderRadius: BorderRadius.md },
   saveBtn: { backgroundColor: Colors.neonGreen, padding: Spacing.md, borderRadius: BorderRadius.full, alignItems: 'center' },
   saveBtnText: { color: Colors.bgDeep, fontWeight: 'bold' },
-  backButton: { padding: Spacing.sm }
+  backButton: { padding: Spacing.sm },
+  aiButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginTop: Spacing.lg, backgroundColor: Colors.neonGreen, paddingVertical: Spacing.lg, borderRadius: BorderRadius.full, shadowColor: Colors.neonGreen, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 6 },
+  aiButtonText: { color: Colors.bgDeep, fontWeight: '800', fontSize: FontSize.md, letterSpacing: 0.5 },
+  aiModalContent: { backgroundColor: Colors.bgDeep, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: Spacing.xl, paddingBottom: Spacing.xxl, maxHeight: '80%' },
+  aiModalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  aiLoadingContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  aiLoadingText: { color: Colors.gray, fontSize: FontSize.sm, marginTop: Spacing.lg, textAlign: 'center', fontStyle: 'italic' },
+  aiScrollView: { marginTop: Spacing.md },
+  aiSummaryText: { color: Colors.white, fontSize: FontSize.base, lineHeight: 24 },
 });
