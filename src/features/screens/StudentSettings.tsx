@@ -8,20 +8,31 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  RefreshControl
+  RefreshControl,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  Image
 } from 'react-native';
-import { User, Bell, Shield, Database, Settings, LogOut } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { User, Bell, Shield, Database, Settings, LogOut, Mail, Phone, Trash2, Save } from 'lucide-react-native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { NeonCard } from '../components/NeonCard';
 import { NeonIcon } from '../components/NeonIcon';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../styles/theme';
 import { supabase } from '../config/supabase';
 
 export default function StudentSettings() {
+  const navigation = useNavigation();
+
   // --- STANY ---
   // Profil
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState(''); // Placeholder for future use
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
 
   // Powiadomienia
   const [notifyScores, setNotifyScores] = useState(true);
@@ -30,43 +41,190 @@ export default function StudentSettings() {
   // Prywatność
   const [isPublicProfile, setIsPublicProfile] = useState(false);
 
+  // Wygląd
+  const [theme, setTheme] = useState(true); // true = ciemny, false = jasny
+
   // Integracje (Status Supabase)
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const checkSupabaseConnection = async () => {
+  const fetchUserSettings = async () => {
     try {
-      const { data, error } = await supabase.auth.getSession();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setIsSupabaseConnected(false);
+        return;
+      }
+      setIsSupabaseConnected(true);
+
+      setEmail(user.email || '');
+
+      const { data, error } = await supabase.from('students').select('*').eq('id', user.id).single();
       if (error) throw error;
-      setIsSupabaseConnected(!!data.session);
+
+      if (data) {
+        setPhone(data.phone || ''); // Pobieramy z tabeli students zamiast auth
+        if (data.name) {
+          const parts = data.name.split(' ');
+          setFirstName(parts[0] || '');
+          setLastName(parts.slice(1).join(' ') || '');
+        }
+        setAvatarUrl(data.avatar || '');
+        setIsPublicProfile(!!data.is_public);
+      }
     } catch (e) {
-      console.error("Błąd połączenia z Supabase:", e);
+      console.error("Błąd pobierania danych:", e);
       setIsSupabaseConnected(false);
     }
   };
 
-  const loadMockSettings = () => {
-    // Tutaj normalnie pobralibyśmy dane profilu po ID z Supabase
-    setFirstName('Jan');
-    setLastName('Kowalski');
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Brak zalogowanego użytkownika.");
+
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+      
+      // Aktualizacja profilu wraz z numerem telefonu w tabeli students
+      const { error: dbError } = await supabase.from('students').update({
+        name: fullName,
+        avatar: avatarUrl,
+        is_public: isPublicProfile,
+        phone: phone // Zapisujemy numer jako zwykły tekst w students, aby ominąć Auth SMS Provider
+      }).eq('id', user.id);
+      
+      if (dbError) throw dbError;
+
+      // Aktualizacja maila przez Auth (tylko email)
+      if (email !== user.email) {
+         const { error: authError } = await supabase.auth.updateUser({
+           email: email
+         });
+         if (authError) throw authError;
+
+         Alert.alert(
+           "Sukces", 
+           "Ustawienia zapisane!\nJeśli zmieniłeś email, konieczne może być jego potwierdzenie."
+         );
+      } else {
+         Alert.alert("Sukces", "Ustawienia zostały zapisane pomyślnie.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert("Błąd", e.message || "Nie udało się zapisać ustawień.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert("Wyloguj", "Czy na pewno chcesz się wylogować?", [
+      { text: "Anuluj", style: "cancel" },
+      { text: "Wyloguj", style: "destructive", onPress: async () => {
+          await supabase.auth.signOut();
+          navigation.dispatch(
+            CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
+          );
+      }}
+    ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Usuń konto",
+      "Tej akcji nie można cofnąć! Czy na pewno chcesz trwale usunąć swoje konto?",
+      [
+        { text: "Anuluj", style: "cancel" },
+        { text: "Usuń", style: "destructive", onPress: async () => {
+            try {
+               const { error } = await supabase.rpc('delete_user');
+               if (error) {
+                 Alert.alert("Błąd", "Funkcja automatycznego usuwania konta nie jest dostepna. Skontaktuj się z trenerem.");
+               } else {
+                 await supabase.auth.signOut();
+                 navigation.dispatch(
+                   CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
+                 );
+               }
+            } catch(e) {
+               Alert.alert("Błąd", "Funkcja usuwania konta nie jest skonfigurowana po stronie serwera.");
+            }
+        }}
+      ]
+    );
   };
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await checkSupabaseConnection();
+    await fetchUserSettings();
     setIsRefreshing(false);
   };
 
+  const handlePickAvatar = async () => {
+    try {
+      // Zapytanie o uprawnienia nie jest konieczne na nowych wersjach galerii, 
+      // ale ImagePicker je obsługuje w razie potrzeby.
+      const result = await ImagePicker.launchImageLibraryAsync({
+        // Używamy nowej tablicy zgodnie z warningiem ze starszej wersji
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setIsUploading(true);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Musisz być zalogowany");
+
+        const asset = result.assets[0];
+        
+        // 1. Unikalna nazwa pliku dla użytkownika
+        const fileExt = asset.uri.split('.').pop() || 'jpg';
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+
+        // 2. Bezpieczny upload plików w React Native odbywa się przez FormData
+        const formData = new FormData();
+        formData.append('file', {
+          uri: asset.uri,
+          name: fileName,
+          type: asset.mimeType || 'image/jpeg',
+        } as any);
+        
+        // 3. Upload na Supabase Storage (bucket "avatars")
+        const { error: uploadError } = await supabase.storage
+           .from('avatars')
+           .upload(fileName, formData, { upsert: true });
+           
+        if (uploadError) throw uploadError;
+        
+        // 4. Pobieranie publicznego linku i ustawianie state
+        const { data: { publicUrl } } = supabase.storage
+           .from('avatars')
+           .getPublicUrl(fileName);
+           
+        setAvatarUrl(publicUrl);
+        Alert.alert("Sukces", "Zdjęcie awatara zaktualizowane! Teraz wciśnij Zapisz Ustawienia na dole.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert("Błąd", "Nie udało się przesłać zdjęcia. Upewnij się, że bucket 'avatars' istnieje." + e.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   useEffect(() => {
-    checkSupabaseConnection();
-    loadMockSettings();
+    fetchUserSettings();
   }, []);
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <NeonIcon Icon={Settings} size={28} color={Colors.neonGreen} glow />
-        <Text style={styles.headerTitle}>Ustawienia Ucznia</Text>
+        <Text style={styles.headerTitle}>Ustawienia</Text>
       </View>
 
       <ScrollView
@@ -80,7 +238,7 @@ export default function StudentSettings() {
         <NeonCard style={styles.card}>
           <View style={styles.sectionHeader}>
             <User size={20} color={Colors.neonGreen} />
-            <Text style={styles.sectionTitle}>Profil</Text>
+            <Text style={styles.sectionTitle}>Profil Publiczny</Text>
           </View>
           
           <View style={styles.contentPadded}>
@@ -89,7 +247,7 @@ export default function StudentSettings() {
               <View style={styles.inputContainer}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Imię"
+                  placeholder={firstName || "Twoje Imię"}
                   placeholderTextColor={Colors.gray}
                   value={firstName}
                   onChangeText={setFirstName}
@@ -102,7 +260,7 @@ export default function StudentSettings() {
               <View style={styles.inputContainer}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Nazwisko"
+                  placeholder={lastName || "Twoje Nazwisko"}
                   placeholderTextColor={Colors.gray}
                   value={lastName}
                   onChangeText={setLastName}
@@ -110,17 +268,84 @@ export default function StudentSettings() {
               </View>
             </View>
 
+            {/* AVATAR UPLOAD */}
+            <View style={styles.avatarSection}>
+              <TouchableOpacity onPress={handlePickAvatar} disabled={isUploading} style={styles.avatarContainer}>
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                     <User size={32} color={Colors.gray} />
+                  </View>
+                )}
+                {isUploading && (
+                  <View style={styles.avatarOverlay}>
+                    <ActivityIndicator color={Colors.white} />
+                  </View>
+                )}
+              </TouchableOpacity>
+              <Text style={styles.avatarHint}>Kliknij awatar, aby go zmienić</Text>
+            </View>
+          </View>
+        </NeonCard>
+
+        {/* SEKCJA: KONTO (E-MAIL, TELEFON) */}
+        <NeonCard style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Shield size={20} color={Colors.neonGreenDark} />
+            <Text style={styles.sectionTitle}>Dane Konta</Text>
+          </View>
+          
+          <View style={styles.contentPadded}>
             <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Avatar (URL)</Text>
+              <Text style={styles.inputLabel}>Adres E-mail</Text>
               <View style={styles.inputContainer}>
+                <Mail size={18} color={Colors.gray} style={{ marginRight: 8 }} />
                 <TextInput
                   style={styles.input}
-                  placeholder="Link do avatara..."
+                  placeholder="Zmień adres e-mail"
                   placeholderTextColor={Colors.gray}
-                  value={avatarUrl}
-                  onChangeText={setAvatarUrl}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
                 />
               </View>
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Text style={styles.inputLabel}>Numer Telefonu</Text>
+              <View style={styles.inputContainer}>
+                <Phone size={18} color={Colors.gray} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Podepnij numer telefonu"
+                  placeholderTextColor={Colors.gray}
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+            </View>
+          </View>
+        </NeonCard>
+
+        {/* SEKCJA: WYGLĄD */}
+        <NeonCard style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Settings size={20} color={Colors.orange} />
+            <Text style={styles.sectionTitle}>Wygląd</Text>
+          </View>
+
+          <View style={styles.contentPadded}>
+            <View style={styles.switchRow}>
+              <Text style={styles.switchLabel}>Ciemny Motyw Aplikacji</Text>
+              <Switch
+                trackColor={{ false: '#3A4A5A', true: 'rgba(0, 230, 118, 0.5)' }}
+                thumbColor={theme ? Colors.neonGreen : Colors.gray}
+                onValueChange={setTheme}
+                value={theme}
+              />
             </View>
           </View>
         </NeonCard>
@@ -134,7 +359,7 @@ export default function StudentSettings() {
           
           <View style={styles.contentPadded}>
             <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Powiadomienia o nowych wynikach</Text>
+              <Text style={styles.switchLabel}>Powiadomienia o wynikach</Text>
               <Switch
                 trackColor={{ false: '#3A4A5A', true: 'rgba(0, 230, 118, 0.5)' }}
                 thumbColor={notifyScores ? Colors.neonGreen : Colors.gray}
@@ -175,32 +400,47 @@ export default function StudentSettings() {
           </View>
         </NeonCard>
 
+        {/* ZAPISZ USTAWIENIA */}
+        <TouchableOpacity 
+          style={styles.saveButton} 
+          onPress={handleSave} 
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <ActivityIndicator color={Colors.bgDeep} />
+          ) : (
+            <>
+              <Save size={20} color={Colors.bgDeep} style={{ marginRight: 8 }} />
+              <Text style={styles.saveButtonText}>Zapisz Ustawienia</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        {/* SEKCJA: ZARZĄDZANIE KONTEM (WYLOGUJ/USUŃ) */}
+        <View style={styles.accountActionSection}>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <LogOut size={20} color={Colors.white} style={{ marginRight: 8 }} />
+            <Text style={styles.logoutButtonText}>Wyloguj Się</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteAccount}>
+            <Trash2 size={20} color={Colors.red} style={{ marginRight: 8 }} />
+            <Text style={styles.deleteButtonText}>Usuń Konto</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* SEKCJA: INTEGRACJE (SUPABASE) */}
-        <NeonCard style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Database size={20} color={Colors.neonGreenDark} />
-            <Text style={styles.sectionTitle}>Integracje (Supabase)</Text>
-          </View>
+        <View style={styles.footerRow}>
+          <Text style={styles.statusLabel}>Baza:</Text>
+          {isSupabaseConnected === null ? (
+            <Text style={[styles.statusValue, { color: Colors.gray }]}>Sprawdzanie...</Text>
+          ) : isSupabaseConnected ? (
+            <Text style={{ color: Colors.neonGreen, fontSize: FontSize.xs, fontWeight: 'bold' }}>POŁĄCZONO</Text>
+          ) : (
+            <Text style={{ color: Colors.red, fontSize: FontSize.xs, fontWeight: 'bold' }}>BŁĄD POŁĄCZENIA</Text>
+          )}
+        </View>
 
-          <View style={styles.contentPadded}>
-            <View style={styles.statusRow}>
-              <Text style={styles.statusLabel}>Baza Danych:</Text>
-              {isSupabaseConnected === null ? (
-                <Text style={[styles.statusValue, { color: Colors.gray }]}>Sprawdzanie...</Text>
-              ) : isSupabaseConnected ? (
-                <View style={styles.connectedBadge}>
-                  <Text style={styles.connectedText}>POŁĄCZONO</Text>
-                </View>
-              ) : (
-                <View style={[styles.connectedBadge, { backgroundColor: 'rgba(255, 23, 68, 0.15)', borderColor: Colors.red }]}>
-                  <Text style={[styles.connectedText, { color: Colors.red }]}>BŁĄD POŁĄCZENIA</Text>
-                </View>
-              )}
-            </View>
-          </View>
-        </NeonCard>
-
-        {/* LOGOUT PLACEHOLDER (Opcjonalnie) */}
         <View style={styles.footer}>
           <Text style={styles.versionText}>SportRecrut Wersja 1.0.0</Text>
         </View>
@@ -259,7 +499,7 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
   },
   
-  // Inputs stylizowane tak jak w LoginScreen
+  // Inputs
   inputWrapper: {
     gap: 4,
   },
@@ -286,6 +526,43 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   
+  // Avatar
+  avatarSection: {
+    alignItems: 'center',
+    marginVertical: Spacing.sm,
+  },
+  avatarContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: Colors.neonGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarHint: {
+    color: Colors.gray,
+    fontSize: FontSize.xs,
+    marginTop: Spacing.xs,
+  },
+  
   // Switches
   switchRow: {
     flexDirection: 'row',
@@ -298,38 +575,84 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: Spacing.md,
   },
+
+  // Save Button
+  saveButton: {
+    flexDirection: 'row',
+    backgroundColor: Colors.neonGreen,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.sm,
+    shadowColor: Colors.neonGreen,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  saveButtonText: {
+    color: Colors.bgDeep,
+    fontSize: FontSize.base,
+    fontWeight: '800',
+  },
+
+  // Account Actions
+  accountActionSection: {
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutButtonText: {
+    color: Colors.white,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 71, 87, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 71, 87, 0.3)',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButtonText: {
+    color: Colors.red,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+  },
   
   // Status (Supabase)
-  statusRow: {
+  footerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
+    marginTop: Spacing.md,
+    gap: 8,
   },
   statusLabel: {
     color: Colors.white,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.xs,
   },
   statusValue: {
     fontWeight: '600',
-    fontSize: FontSize.sm,
-  },
-  connectedBadge: {
-    backgroundColor: 'rgba(0, 230, 118, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.3)',
-  },
-  connectedText: {
-    color: Colors.neonGreen,
-    fontWeight: '800',
     fontSize: FontSize.xs,
   },
   
   // Footer
   footer: {
-    marginTop: Spacing.xl,
+    marginTop: Spacing.sm,
     alignItems: 'center',
   },
   versionText: {
