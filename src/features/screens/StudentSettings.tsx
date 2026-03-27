@@ -87,6 +87,16 @@ export default function StudentSettings() {
 
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
       
+      if (phone.trim() !== '') {
+        const cleanPhone = phone.replace(/[\s-]/g, '');
+        const phoneRegex = /^\+?[0-9]{9,15}$/;
+        if (!phoneRegex.test(cleanPhone)) {
+          Alert.alert("Błąd", "Podaj prawidłowy numer telefonu (min. 9 cyfr).");
+          setIsSaving(false);
+          return;
+        }
+      }
+      
       // Aktualizacja profilu wraz z numerem telefonu w tabeli students
       const { error: dbError } = await supabase.from('students').update({
         name: fullName,

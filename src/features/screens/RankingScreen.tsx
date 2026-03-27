@@ -31,14 +31,15 @@ export default function RankingScreen() {
       let usersList: any[] = usersSnap || [];
 
       // Filter to same school (or fallback to all if no school set for safety)
-      let studentsInSchool = usersList.filter(u => 
-        (!targetSchool || (u.school && u.school.trim().toLowerCase() === targetSchool)) &&
-        u.is_public !== false
+      let allStudentsInSchool = usersList.filter(u => 
+        (!targetSchool || (u.school && u.school.trim().toLowerCase() === targetSchool))
       );
+
+      let studentsInSchool = allStudentsInSchool.filter(u => u.is_public !== false);
 
       // If no real students in school yet, fallback to mock so UI doesn't look broken,
       // but only if NO real students exist in school.
-      if (studentsInSchool.length === 0) {
+      if (allStudentsInSchool.length === 0) {
         studentsInSchool = [...MOCK_STUDENTS];
       }
 
