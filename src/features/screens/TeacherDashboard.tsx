@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Animated, ActivityIndicator, RefreshControl, Image } from 'react-native';
 import { Users, CheckCircle, Flame, Plus, AlertTriangle, RefreshCw, Settings } from 'lucide-react-native';
 import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -25,6 +25,7 @@ export default function TeacherDashboard() {
 
   // STANY DANYCH
   const [teacherName, setTeacherName] = useState<string>('Ładowanie...');
+  const [teacherAvatar, setTeacherAvatar] = useState<string | null>(null);
   const [totalStudents, setTotalStudents] = useState<number>(0);
   const [testedStudents, setTestedStudents] = useState<number>(0);
   const [activeStreaks, setActiveStreaks] = useState<number>(0);
@@ -68,6 +69,8 @@ export default function TeacherDashboard() {
       } else {
         setTeacherName(currentUser.email?.split('@')[0] || 'Nauczyciel');
       }
+
+      setTeacherAvatar(userData?.avatar || null);
 
       const rawSchoolName = userData?.school;
 
@@ -169,10 +172,11 @@ export default function TeacherDashboard() {
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <TouchableOpacity onPress={fetchDashboardData} style={styles.avatar} activeOpacity={0.8}>
-              <Text style={{ fontSize: 20 }}>👩‍🏫</Text>
-              <View style={{ position: 'absolute', bottom: -5, right: -5, backgroundColor: Colors.bgDeep, borderRadius: 10, padding: 2 }}>
-                <RefreshCw size={10} color={Colors.neonGreen} />
-              </View>
+              {teacherAvatar ? (
+                <Image source={{ uri: teacherAvatar }} style={styles.avatarImage} />
+              ) : (
+                <Text style={{ fontSize: 20 }}>👩‍🏫</Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('TeacherSettings' as any)} style={styles.settingsButton}>
               <Settings size={18} color={Colors.gray} />
@@ -319,7 +323,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,
     shadowRadius: 10,
-    elevation: 6,
+    elevation: 8,
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   settingsButton: {
     width: 36,
